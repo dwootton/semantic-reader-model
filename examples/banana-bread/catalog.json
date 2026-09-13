@@ -1,0 +1,21 @@
+{
+  "datasets": [
+    {
+      "id": "allrecipes",
+      "label": "Banana Bread",
+      "url": "https://www.allrecipes.com/recipe/20144/banana-banana-bread/",
+      "variants": [
+        {
+          "id": "baseline",
+          "label": "Authored original"
+        },
+        {
+          "id": "revised",
+          "label": "Authored revised"
+        }
+      ],
+      "hasScreenshot": true,
+      "domCount": 5145
+    }
+  ]
+}

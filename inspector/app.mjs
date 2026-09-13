@@ -83,7 +83,7 @@ function renderTree(side) {
     row.addEventListener('mouseleave', () => { hovered = null; paint(); });
     fragment.append(row);
   }
-  if (!pane.rows.length) fragment.append(el('p', 'No matching nodes. Try another term.', 'empty'));
+  if (!pane.rows.length) fragment.append(el('p', 'No matching nodes.', 'empty'));
   pane.element.replaceChildren(fragment);
   paintRows();
 }
@@ -199,13 +199,14 @@ function renderScreenshot() {
     [...$('overlays').children].find(button => button.dataset.sourceId === focusedSource)?.focus({ preventScroll: true });
   }
   $('screenshot-note').textContent = refs.size
-    ? `${boxes.length} of ${refs.size} linked elements have bounds in this saved viewport. Bounds are approximate; dynamic content may have changed during capture.`
-    : 'Select a hierarchy node to locate its source elements in the saved viewport.';
+    ? `${boxes.length} of ${refs.size} linked elements visible. Approximate bounds.`
+    : 'Select a node to highlight its location.';
 }
 
 function paint() { paintRows(); renderScreenshot(); }
 
 function renderDetails() {
+  document.querySelector('.selection-detail').hidden = !selected;
   renderSelectionMetrics();
   if (!selected) {
     $('selection-type').textContent = 'SELECT A NODE'; $('match-count').textContent = '';
@@ -227,10 +228,10 @@ function renderDetails() {
   $('source-path').textContent = refs.size > 1 ? [...refs].join(' · ') : source?.cssPath || source?.xpath || '';
   const attrs = source?.attributes || {};
   const allowed = ['role', 'aria-label', 'aria-disabled', 'disabled', 'aria-expanded', 'aria-selected', 'aria-checked', 'type', 'href'];
-  $('source-attributes').textContent = refs.size === 1 ? allowed.filter(k => k in attrs).map(k => `${k}=${JSON.stringify(attrs[k])}`).join(' · ') : 'Select an individual DOM element to inspect its attributes and locator.';
+  $('source-attributes').textContent = refs.size === 1 ? allowed.filter(k => k in attrs).map(k => `${k}=${JSON.stringify(attrs[k])}`).join(' · ') : 'Select a source element for details.';
   const notes = [];
   if (owners?.viaAncestor) notes.push(`No direct annotation for this node. Highlighting owners of ancestor ${owners.mappedSource}.`);
-  else if (owners && !owners.exact.size) notes.push('This captured element has no hierarchy annotation.');
+  else if (owners && !owners.exact.size) notes.push('No hierarchy annotation.');
   if (selected.side === 'semantic' && n.notes) notes.push(typeof n.notes === 'string' ? n.notes : JSON.stringify(n.notes));
   if (source?.hidden && refs.size === 1) notes.push('The capture records hidden/excluded evidence; visual presence and accessibility exposure can differ.');
   $('selection-note').textContent = short(notes.join(' '), 420);
@@ -309,7 +310,7 @@ async function loadDataset(id) {
     $('announcement').textContent = `${data.label} loaded. ${index.hierarchy.size} hierarchy nodes and ${index.dom.size} DOM elements.`;
   } catch (error) {
     if (error.name !== 'AbortError') {
-      $('load-error').textContent = `${error.message} Run the local server and reload this page.`;
+      $('load-error').textContent = `${error.message} Reload to try again.`;
       $('load-error').hidden = false; $('workspace').setAttribute('aria-busy', 'false');
     }
   }
@@ -377,7 +378,7 @@ narrationToggle.addEventListener('click', () => {
   const enabled = narrationToggle.getAttribute('aria-pressed') !== 'true';
   narrator.setEnabled(enabled);
   narrationToggle.setAttribute('aria-pressed', String(enabled));
-  narrationToggle.textContent = `Narration: ${enabled ? 'on' : 'off'}`;
+  narrationToggle.textContent = `Read aloud: ${enabled ? 'on' : 'off'}`;
   if (enabled) narrator.speak('Narration on. Use arrow keys to explore a tree.');
 });
 window.addEventListener('pagehide', () => narrator.stop());
@@ -460,8 +461,11 @@ $('statistics-all-targets').addEventListener('click', () => { showAllMetricTarge
 
 try {
   const response = await fetch('data/catalog.json');
-  if (!response.ok) throw new Error('Capture catalog is missing. Run build_data.py first.');
+  if (!response.ok) throw new Error('Example data could not be loaded.');
   catalog = (await response.json()).datasets;
+  $('dataset-label').hidden = catalog.length === 1;
+  $('active-capture').hidden = catalog.length !== 1;
+  $('active-capture').textContent = catalog.length === 1 ? catalog[0].label : '';
   $('dataset').replaceChildren();
   for (const item of catalog) { const option = el('option', item.label); option.value = item.id; $('dataset').append(option); }
   const requested = new URL(location.href).searchParams.get('site');

@@ -22,6 +22,8 @@
 /inspector/qa/
 /examples/*
 !/examples/demo/
+!/examples/banana-bread/
+/.pages-dist/
 /experiments/dom-downsampling/output/
 /experiments/dom-downsampling/report.json
 /docs/research/gcp-concurrency-check.md

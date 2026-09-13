@@ -5,49 +5,50 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>Semantic Inspector</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23142335'/%3E%3Cpath d='M8 8v16m0-8h16M24 8v16' stroke='%236fe0cd' stroke-width='3' fill='none'/%3E%3C/svg%3E">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23000'/%3E%3Cpath d='M8 8v16m0-8h16M24 8v16' stroke='%23fff' stroke-width='3' fill='none'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
   <script type="module" src="app.mjs"></script>
 </head>
 <body>
   <header class="app-header">
-    <div class="brand"><span class="brand-mark" aria-hidden="true">⊢⊣</span><div><h1>Semantic Inspector</h1><p>Trace meaning back to the page</p></div></div>
+    <div class="brand"><span class="brand-mark" aria-hidden="true">⊢⊣</span><div><h1>Semantic Reader</h1></div></div>
+    <span id="active-capture" class="active-capture" hidden></span>
     <div class="dataset-controls">
-      <label>Capture<select id="dataset" disabled><option>Loading captures…</option></select></label>
+      <label id="dataset-label">Example<select id="dataset" disabled><option>Loading captures…</option></select></label>
       <label>Hierarchy<select id="variant" disabled></select></label>
     </div>
-    <button id="statistics-open" class="statistics-launch" aria-haspopup="dialog" aria-controls="statistics-dialog" disabled>Statistics</button>
-    <button id="narration-toggle" class="statistics-launch" aria-pressed="false" title="Speak nodes as you navigate with arrow keys or select them">Narration: off</button>
+    <button id="statistics-open" class="statistics-launch" aria-haspopup="dialog" aria-controls="statistics-dialog" disabled>Metrics</button>
+    <button id="narration-toggle" class="statistics-launch" aria-pressed="false" title="Speak nodes as you navigate with arrow keys or select them">Read aloud: off</button>
   </header>
   <div id="load-error" class="error" role="alert" hidden></div>
   <main id="workspace" aria-busy="true">
     <section class="pane semantic-pane" aria-labelledby="semantic-title">
-      <header class="pane-heading"><div><span class="eyebrow">01 / EXPLORE</span><h2 id="semantic-title">Semantic hierarchy</h2></div><div class="view-switch" role="group" aria-label="Left pane view"><button id="left-semantic-view" aria-pressed="true">Hierarchy</button><button id="left-raw-view" aria-pressed="false">Raw DOM</button></div></header>
-      <div id="semantic-tools" class="pane-tools"><label class="search-label"><span class="sr-only">Find a hierarchy node</span><input id="semantic-search" type="search" placeholder="Find a group, label, or ID…" autocomplete="off"></label><button id="semantic-expand" title="Expand every hierarchy level">Expand all</button><button id="semantic-collapse" title="Collapse hierarchy">Collapse</button></div>
-      <div id="raw-tools" class="pane-tools" hidden><label class="search-label"><span class="sr-only">Find a left DOM element</span><input id="raw-search" type="search" placeholder="Find a tag, text, attribute, or ID…" autocomplete="off"></label><button id="raw-expand" title="Expand every DOM level">Expand all</button><button id="raw-collapse" title="Collapse left DOM">Collapse</button></div>
+      <header class="pane-heading"><div><h2 id="semantic-title">Semantic hierarchy</h2></div><div class="view-switch" role="group" aria-label="Left pane view"><button id="left-semantic-view" aria-pressed="true">Hierarchy</button><button id="left-raw-view" aria-pressed="false">Raw DOM</button></div></header>
+      <div id="semantic-tools" class="pane-tools"><label class="search-label"><span class="sr-only">Find a hierarchy node</span><input id="semantic-search" type="search" placeholder="Search hierarchy…" autocomplete="off"></label><button id="semantic-expand" title="Expand every hierarchy level">Expand all</button><button id="semantic-collapse" title="Collapse hierarchy">Collapse</button></div>
+      <div id="raw-tools" class="pane-tools" hidden><label class="search-label"><span class="sr-only">Find a left DOM element</span><input id="raw-search" type="search" placeholder="Search source…" autocomplete="off"></label><button id="raw-expand" title="Expand every DOM level">Expand all</button><button id="raw-collapse" title="Collapse left DOM">Collapse</button></div>
       <label id="semantic-scope" class="scope-option"><input id="include-children" type="checkbox" aria-label="Include child references" checked> Include child references <span id="semantic-count" class="count"></span></label>
       <p id="raw-scope" class="scope-option" hidden></p>
       <div id="semantic-tree" class="tree" role="tree" aria-label="Semantic hierarchy" aria-describedby="tree-help"></div>
       <div id="raw-tree" class="tree dom-tree" role="tree" aria-label="Left raw DOM" aria-describedby="tree-help" hidden></div>
-      <p id="tree-help" class="pane-caption">←/→ siblings · ↓ child · ↑ parent · Select to pin</p>
+      <details class="keyboard-help"><summary>Keyboard shortcuts</summary><p id="tree-help">← / → Siblings · ↓ Child · ↑ Parent · Enter Select</p></details>
     </section>
     <section class="pane dom-pane" aria-labelledby="dom-title">
-      <header class="pane-heading"><div><span class="eyebrow">02 / SOURCE</span><h2 id="dom-title">Captured DOM</h2></div><div class="view-switch" role="group" aria-label="Source view"><button id="dom-view" aria-pressed="true">DOM tree</button><button id="screenshot-view" aria-pressed="false">Screenshot</button></div></header>
-      <div id="dom-tools" class="pane-tools"><label class="search-label"><span class="sr-only">Find a DOM element</span><input id="dom-search" type="search" placeholder="Find a tag, text, attribute, or ID…" autocomplete="off"></label><button id="dom-expand" title="Expand every DOM level">Expand all</button><button id="dom-collapse" title="Collapse DOM">Collapse</button></div>
-      <div class="source-context"><span id="dom-count"></span><span class="legend"><i></i> Direct reference <i class="ancestor-dot"></i> Via ancestor</span></div>
+      <header class="pane-heading"><div><h2 id="dom-title">Source DOM</h2></div><div class="view-switch" role="group" aria-label="Source view"><button id="dom-view" aria-pressed="true">DOM tree</button><button id="screenshot-view" aria-pressed="false">Screenshot</button></div></header>
+      <div id="dom-tools" class="pane-tools"><label class="search-label"><span class="sr-only">Find a DOM element</span><input id="dom-search" type="search" placeholder="Search source…" autocomplete="off"></label><button id="dom-expand" title="Expand every DOM level">Expand all</button><button id="dom-collapse" title="Collapse DOM">Collapse</button></div>
+      <div class="source-context"><span id="dom-count"></span><span class="legend"><i></i> Linked <i class="ancestor-dot"></i> Context</span></div>
       <div id="dom-tree" class="tree dom-tree" role="tree" aria-label="Captured DOM"></div>
-      <div id="screenshot-panel" class="screenshot-panel" hidden><p id="screenshot-note"></p><div class="screenshot-stage"><img id="screenshot" alt="Captured page viewport"><div id="overlays" aria-label="Linked element bounds"></div></div><p class="pane-caption">Bounds come from the saved capture. Elements below this viewport remain available in the DOM tree.</p></div>
+      <div id="screenshot-panel" class="screenshot-panel" hidden><p id="screenshot-note"></p><div class="screenshot-stage"><img id="screenshot" alt="Captured page viewport"><div id="overlays" aria-label="Linked element bounds"></div></div><p class="pane-caption">Saved viewport · approximate bounds.</p></div>
     </section>
   </main>
   <footer class="selection-detail" aria-label="Selected relationship" hidden>
     <div class="selection-top"><span id="selection-type" class="eyebrow">SELECT A NODE</span><span id="match-count"></span><button id="clear-selection" disabled>Clear selection</button></div>
-    <div class="detail-grid"><div><h3 id="selection-title">Follow the connection</h3><p id="selection-summary">Choose a group on the left or an element on the right. Both panes highlight their relationship.</p></div><div id="source-detail"><code id="source-path"></code><p id="source-attributes"></p><p id="selection-note"></p></div></div>
+    <div class="detail-grid"><div><h3 id="selection-title">Follow the connection</h3><p id="selection-summary">Choose a group on the left or an element on the right. Both panes highlight their relationship.</p></div><details id="source-detail"><summary>Source details</summary><code id="source-path"></code><p id="source-attributes"></p><p id="selection-note"></p></details></div>
     <p id="selection-navigation" class="selection-navigation" hidden></p>
   </footer>
   <dialog id="statistics-dialog" aria-labelledby="statistics-title">
     <div class="statistics-heading"><div><span class="eyebrow">STRUCTURE &amp; NAVIGATION</span><h2 id="statistics-title">Capture statistics</h2><p id="statistics-capture"></p></div><button id="statistics-close" aria-label="Close statistics">Close</button></div>
     <div id="statistics-summary" class="statistics-summary"></div>
-    <p class="statistics-caveat">Tree-size reduction is measured against raw DOM elements, not a screen-reader accessibility tree. Navigation figures below are models, not measured user performance.</p>
+    <p class="statistics-caveat">Estimates from the saved DOM, not measured screen-reader performance.</p>
     <h3>Reaching the same targets</h3>
     <p id="statistics-coverage" class="statistics-explanation"></p>
     <div class="statistics-table-wrap"><table class="statistics-table"><thead><tr><th>Navigation model</th><th>Median</th><th>90th percentile</th><th>Mean</th></tr></thead><tbody id="statistics-navigation"></tbody></table></div>

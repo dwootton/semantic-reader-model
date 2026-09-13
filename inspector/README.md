@@ -54,3 +54,7 @@ Model tests exercise many-to-many references, descendant expansion, explicit anc
 ## Limits
 
 This is a capture inspector, not a live website proxy. Screenshots cover one saved viewport and may differ from geometry because the original captures were sequential/dynamic. No screenshot should be inferred for EWH or NYT. Source DOM inclusion, accessibility exposure, and visible bounds are different facts. Raw capture metadata can include session-specific chrome; keep this local unless a separately reviewed export is requested.
+
+## Static Pages build
+
+The published landing page opens the reviewed Banana Bread example by default. Build into an empty directory with `python3 scripts/build_pages_demo.py --destination /tmp/semantic-pages`. The build includes only the static inspector assets and the reviewed example; it has no model runner or comparison API. The source export is sanitized, so its metrics describe that published view.

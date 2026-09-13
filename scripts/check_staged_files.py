@@ -11,6 +11,10 @@ LOCAL_PREFIXES = (
     "experiments/dom-downsampling/output/",
 )
 LOCAL_FILES = {"AGENTS.md", "infra/README.md", ".lab-config.json"}
+PUBLIC_EXAMPLE_FILES = {
+    "examples/banana-bread/allrecipes.json", "examples/banana-bread/allrecipes.jpg",
+    "examples/banana-bread/catalog.json", "examples/banana-bread/README.md",
+}
 PATTERNS = {
     "private key": rb"-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----",
     "Google API key": rb"AIza[0-9A-Za-z_-]{30,}",
@@ -30,7 +34,8 @@ def scan_blob(path, data):
     name = PurePosixPath(path).name.lower()
     forbidden = (
         path in LOCAL_FILES or path.startswith(LOCAL_PREFIXES)
-        or (path.startswith("examples/") and not path.startswith("examples/demo/"))
+        or (path.startswith("examples/") and not path.startswith("examples/demo/")
+            and path not in PUBLIC_EXAMPLE_FILES)
         or (name.startswith(".env") and name != ".env.example")
         or name in {"token.json", "benchmark-headers.json", "application_default_credentials.json"}
         or name.startswith("credentials")

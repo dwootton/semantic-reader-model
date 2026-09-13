@@ -14,6 +14,12 @@ The rubric is provisional. The pilot found both useful navigation patterns and i
 
 ![Project pipeline](docs/diagrams/semantic-reader-simple-pipeline.png)
 
+## Published demo
+
+[Open the Banana Bread inspector](https://www.dylanwootton.com/semantic-reader-model/). It opens the reviewed Allrecipes example and runs entirely as a static page. The original and revised hierarchies are authored research examples, not fine-tuned-model outputs.
+
+The Pages workflow publishes only an explicit ten-file artifact; it does not publish the repository, model runner, local credentials, or other captures. See [the example provenance](examples/banana-bread/README.md).
+
 ## Try the local inspector
 
 Use Python 3.12+ and a current Node.js runtime. The demo and inspector need no Python packages, model credentials, or cloud access.
@@ -25,7 +31,7 @@ python3 inspector/serve.py --port 8765
 
 Open <http://127.0.0.1:8765/>. The demo uses synthetic library content. It supports navigating the hierarchy and its source tree without executing a captured website's scripts. Demo preparation preserves any existing local capture catalog.
 
-The original research captures are deliberately **not included**. They contain third-party page content and may contain session-specific or credential-like material. Capture-derived exports, screenshots, request logs, and benchmark runs stay local. Scripts that require that corpus are included as research tools, not as prepopulated demos.
+The raw research captures are deliberately **not included**. One separately reviewed, sanitized banana bread view is included for the explicitly requested public demo. They contain third-party page content and may contain session-specific or credential-like material. Other capture-derived exports, screenshots, request logs, and benchmark runs stay local. Scripts that require that corpus are included as research tools, not as prepopulated demos.
 
 ## Project map
 
