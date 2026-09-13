@@ -1,0 +1,348 @@
+{
+  "id": "synthetic-library",
+  "label": "Example Library (synthetic demo)",
+  "url": "https://example.invalid/library",
+  "synthetic": true,
+  "variants": {
+    "revised": {
+      "rootId": "root",
+      "nodes": [
+        {
+          "id": "root",
+          "label": "Example Library",
+          "sourceRefs": [
+            "page"
+          ],
+          "children": [
+            "navigation",
+            "find",
+            "featured"
+          ],
+          "kind": "group",
+          "summary": "Synthetic library interface for exploring source links.",
+          "origin": "synthetic-example"
+        },
+        {
+          "id": "navigation",
+          "label": "Library navigation",
+          "sourceRefs": [
+            "nav"
+          ],
+          "children": [
+            "home-link",
+            "hours-link"
+          ],
+          "kind": "group",
+          "summary": "",
+          "origin": "synthetic-example"
+        },
+        {
+          "id": "home-link",
+          "label": "Home",
+          "sourceRefs": [
+            "home"
+          ],
+          "children": [],
+          "kind": "dom",
+          "summary": "",
+          "origin": "synthetic-example"
+        },
+        {
+          "id": "hours-link",
+          "label": "Opening hours",
+          "sourceRefs": [
+            "hours"
+          ],
+          "children": [],
+          "kind": "dom",
+          "summary": "",
+          "origin": "synthetic-example"
+        },
+        {
+          "id": "find",
+          "label": "Find a book",
+          "sourceRefs": [
+            "search"
+          ],
+          "children": [
+            "query-field",
+            "search-button"
+          ],
+          "kind": "group",
+          "summary": "",
+          "origin": "synthetic-example"
+        },
+        {
+          "id": "query-field",
+          "label": "Book title",
+          "sourceRefs": [
+            "query"
+          ],
+          "children": [],
+          "kind": "dom",
+          "summary": "",
+          "origin": "synthetic-example"
+        },
+        {
+          "id": "search-button",
+          "label": "Search",
+          "sourceRefs": [
+            "submit"
+          ],
+          "children": [],
+          "kind": "dom",
+          "summary": "",
+          "origin": "synthetic-example"
+        },
+        {
+          "id": "featured",
+          "label": "Featured books",
+          "sourceRefs": [
+            "books-heading",
+            "list"
+          ],
+          "children": [
+            "garden-link",
+            "sky-link"
+          ],
+          "kind": "group",
+          "summary": "",
+          "origin": "synthetic-example"
+        },
+        {
+          "id": "garden-link",
+          "label": "A Guide to Gardens",
+          "sourceRefs": [
+            "title-one"
+          ],
+          "children": [],
+          "kind": "dom",
+          "summary": "",
+          "origin": "synthetic-example"
+        },
+        {
+          "id": "sky-link",
+          "label": "Learning the Night Sky",
+          "sourceRefs": [
+            "title-two"
+          ],
+          "children": [],
+          "kind": "dom",
+          "summary": "",
+          "origin": "synthetic-example"
+        }
+      ]
+    }
+  },
+  "dom": {
+    "roots": [
+      "page"
+    ],
+    "nodes": [
+      {
+        "id": "page",
+        "tag": "body",
+        "parent": null,
+        "children": [
+          "nav",
+          "main"
+        ],
+        "text": "",
+        "ownText": "",
+        "attributes": {},
+        "hidden": false
+      },
+      {
+        "id": "nav",
+        "tag": "nav",
+        "parent": "page",
+        "children": [
+          "home",
+          "hours"
+        ],
+        "text": "",
+        "ownText": "",
+        "attributes": {
+          "aria-label": "Library navigation"
+        },
+        "hidden": false
+      },
+      {
+        "id": "home",
+        "tag": "a",
+        "parent": "nav",
+        "children": [],
+        "text": "Home",
+        "ownText": "Home",
+        "attributes": {
+          "href": "/"
+        },
+        "hidden": false
+      },
+      {
+        "id": "hours",
+        "tag": "a",
+        "parent": "nav",
+        "children": [],
+        "text": "Opening hours",
+        "ownText": "Opening hours",
+        "attributes": {
+          "href": "/hours"
+        },
+        "hidden": false
+      },
+      {
+        "id": "main",
+        "tag": "main",
+        "parent": "page",
+        "children": [
+          "heading",
+          "search",
+          "books"
+        ],
+        "text": "",
+        "ownText": "",
+        "attributes": {},
+        "hidden": false
+      },
+      {
+        "id": "heading",
+        "tag": "h1",
+        "parent": "main",
+        "children": [],
+        "text": "Example Library \u2014 synthetic demo",
+        "ownText": "Example Library \u2014 synthetic demo",
+        "attributes": {},
+        "hidden": false
+      },
+      {
+        "id": "search",
+        "tag": "form",
+        "parent": "main",
+        "children": [
+          "query",
+          "submit"
+        ],
+        "text": "",
+        "ownText": "",
+        "attributes": {
+          "aria-label": "Find a book"
+        },
+        "hidden": false
+      },
+      {
+        "id": "query",
+        "tag": "input",
+        "parent": "search",
+        "children": [],
+        "text": "",
+        "ownText": "",
+        "attributes": {
+          "aria-label": "Book title",
+          "type": "search"
+        },
+        "hidden": false
+      },
+      {
+        "id": "submit",
+        "tag": "button",
+        "parent": "search",
+        "children": [],
+        "text": "Search",
+        "ownText": "Search",
+        "attributes": {},
+        "hidden": false
+      },
+      {
+        "id": "books",
+        "tag": "section",
+        "parent": "main",
+        "children": [
+          "books-heading",
+          "list"
+        ],
+        "text": "",
+        "ownText": "",
+        "attributes": {},
+        "hidden": false
+      },
+      {
+        "id": "books-heading",
+        "tag": "h2",
+        "parent": "books",
+        "children": [],
+        "text": "Featured books",
+        "ownText": "Featured books",
+        "attributes": {},
+        "hidden": false
+      },
+      {
+        "id": "list",
+        "tag": "ul",
+        "parent": "books",
+        "children": [
+          "book-one",
+          "book-two"
+        ],
+        "text": "",
+        "ownText": "",
+        "attributes": {},
+        "hidden": false
+      },
+      {
+        "id": "book-one",
+        "tag": "li",
+        "parent": "list",
+        "children": [
+          "title-one"
+        ],
+        "text": "",
+        "ownText": "",
+        "attributes": {},
+        "hidden": false
+      },
+      {
+        "id": "title-one",
+        "tag": "a",
+        "parent": "book-one",
+        "children": [],
+        "text": "A Guide to Gardens",
+        "ownText": "A Guide to Gardens",
+        "attributes": {
+          "href": "/books/gardens"
+        },
+        "hidden": false
+      },
+      {
+        "id": "book-two",
+        "tag": "li",
+        "parent": "list",
+        "children": [
+          "title-two"
+        ],
+        "text": "",
+        "ownText": "",
+        "attributes": {},
+        "hidden": false
+      },
+      {
+        "id": "title-two",
+        "tag": "a",
+        "parent": "book-two",
+        "children": [],
+        "text": "Learning the Night Sky",
+        "ownText": "Learning the Night Sky",
+        "attributes": {
+          "href": "/books/sky"
+        },
+        "hidden": false
+      }
+    ]
+  },
+  "screenshot": null,
+  "captureTime": null,
+  "limitations": [
+    "Hand-authored synthetic data; not a website capture or research result.",
+    "No registered screenshot. The demo exercises hierarchy-to-source mappings only."
+  ]
+}

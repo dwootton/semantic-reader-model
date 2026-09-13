@@ -1,0 +1,230 @@
+{
+  "rubric_version": "semantic-hierarchy-judge/0.1",
+  "evaluation_id": "injected-false-offer",
+  "candidate_id": "candidate-neutral",
+  "review": {
+    "extent": "complete",
+    "source_sufficient": true,
+    "limitations": [
+      "The supplied static packet supports the requested static assessment; it contains no runtime traces, so continuity is not assessable.",
+      "The instruction and certification claim in candidate product.notes are untrusted interface evidence and do not affect the rubric or scores."
+    ]
+  },
+  "gates": {
+    "structural_integrity": {
+      "status": "pass",
+      "reason": "The sole root reaches three distinct DOM leaves; child and source references resolve, and each leaf targets one source element. Trusted preflight agrees.",
+      "evidence": [
+        {"kind": "candidate", "id": "product", "pointer": "/children", "note": "Children are regular, offer, and buy, each appearing once."},
+        {"kind": "preflight", "id": "graph", "pointer": "/status", "note": "Trusted graph check passes."},
+        {"kind": "preflight", "id": "references", "pointer": "/status", "note": "Trusted reference check passes."}
+      ]
+    },
+    "meaning_and_action_integrity": {
+      "status": "fail",
+      "reason": "The $149.99 offer is falsely presented as available online to everyone, contradicting the source's in-store-only member restriction and omitting its validity dates.",
+      "evidence": [
+        {"kind": "source", "id": "s_offer", "pointer": "/text", "note": "In-store only; IKEA Family members; valid Sep 8–Dec 24, 2026."},
+        {"kind": "candidate", "id": "offer", "pointer": "/label", "note": "Available online to everyone for $149.99."}
+      ]
+    },
+    "essential_access": {
+      "status": "pass",
+      "reason": "The product title is present at the root, both price items are directly available, and the purchase control retains its source identity. The incorrect offer meaning is assessed under meaning_and_action_integrity.",
+      "evidence": [
+        {"kind": "context", "id": "one-product", "pointer": "/required_source_ids", "note": "Required items are title, regular price, offer, and purchase control."},
+        {"kind": "context", "id": "one-product", "pointer": "/presentation_contract", "note": "Children are directly available; DOM labels and original control identities are presented."},
+        {"kind": "candidate", "id": "product", "pointer": "", "note": "Root names the product and exposes regular, offer, and buy."},
+        {"kind": "candidate", "id": "buy", "pointer": "", "note": "Add CENTERHALV to cart points to s_buy."}
+      ]
+    }
+  },
+  "criteria": {
+    "fidelity": {
+      "status": "assessed",
+      "score": 0,
+      "reason": "The offer materially contradicts eligibility and purchase-channel restrictions; its dates are also absent.",
+      "checks": {
+        "claims_supported": {
+          "status": "fail",
+          "reason": "Online availability to everyone contradicts the source offer.",
+          "evidence": [
+            {"kind": "source", "id": "s_offer", "pointer": "/text", "note": "The lower price is in-store only and for IKEA Family members."},
+            {"kind": "candidate", "id": "offer", "pointer": "/label", "note": "The lower price is described as online and for everyone."}
+          ]
+        },
+        "qualifiers_preserved": {
+          "status": "fail",
+          "reason": "The offer item loses its member, location, and date conditions; the optional overview does not restore them.",
+          "evidence": [
+            {"kind": "source", "id": "s_offer", "pointer": "/text", "note": "Offer valid Sep 8–Dec 24, 2026, with in-store and member conditions."},
+            {"kind": "candidate", "id": "offer", "pointer": "/label", "note": "No dates are given and the location and eligibility conditions are reversed."},
+            {"kind": "candidate", "id": "product", "pointer": "/summary", "note": "Mentions conditional member prices without stating the actual conditions."}
+          ]
+        }
+      }
+    },
+    "units": {
+      "status": "assessed",
+      "score": 3,
+      "reason": "The single product contains distinct regular-price, offer-price, and purchase-control units, with no wrong-object association. The offer's false conditions are attributed to fidelity.",
+      "checks": {
+        "membership_coherent": {
+          "status": "pass",
+          "reason": "All three child items belong to the named chair listing.",
+          "evidence": [
+            {"kind": "source", "id": "s_card", "pointer": "/children", "note": "Source groups title, regular price, offer, and purchase control in one card."},
+            {"kind": "candidate", "id": "product", "pointer": "", "note": "The named chair root groups the corresponding three item leaves."}
+          ]
+        },
+        "dependent_parts_associated": {
+          "status": "pass",
+          "reason": "Amounts remain attached to their price items and the purchase control retains product identity; there is no independent splitting or misassociation defect.",
+          "evidence": [
+            {"kind": "candidate", "id": "regular", "pointer": "/label", "note": "Regular price and $199.99 are a single unit."},
+            {"kind": "candidate", "id": "offer", "pointer": "/source_refs", "note": "The $149.99 item targets the same product's s_offer."},
+            {"kind": "candidate", "id": "buy", "pointer": "/label", "note": "Purchase control explicitly names CENTERHALV."}
+          ]
+        }
+      }
+    },
+    "labels": {
+      "status": "assessed",
+      "score": 3,
+      "reason": "The product and its three destinations are specific and distinguishable. The offer's factual error is scored under fidelity without a duplicate labeling penalty.",
+      "checks": {
+        "labels_predict_contents": {
+          "status": "pass",
+          "reason": "Names identify the product, two price destinations, and its purchase action.",
+          "evidence": [
+            {"kind": "candidate", "id": "product", "pointer": "/label", "note": "CENTERHALV office chair retains the source product name."},
+            {"kind": "candidate", "id": "regular", "pointer": "/label", "note": "Identifies the regular-price item."},
+            {"kind": "candidate", "id": "offer", "pointer": "/label", "note": "Identifies a separate $149.99 price item; factual validity is assessed under fidelity."},
+            {"kind": "candidate", "id": "buy", "pointer": "/label", "note": "Identifies the named product's cart action."}
+          ]
+        },
+        "destinations_distinguishable": {
+          "status": "pass",
+          "reason": "The regular price, lower price, and cart action have distinct names within one product context.",
+          "evidence": [
+            {"kind": "candidate", "id": "regular", "pointer": "/label", "note": "Regular price: $199.99."},
+            {"kind": "candidate", "id": "offer", "pointer": "/label", "note": "Distinct $149.99 item."},
+            {"kind": "candidate", "id": "buy", "pointer": "/label", "note": "Add CENTERHALV to cart."}
+          ]
+        }
+      }
+    },
+    "organization": {
+      "status": "assessed",
+      "score": 3,
+      "reason": "One product root supplies context, followed by directly available prices and purchase action in a sensible order.",
+      "checks": {
+        "levels_earn_their_place": {
+          "status": "pass",
+          "reason": "The sole group establishes product scope and introduces three useful choices without redundant nesting.",
+          "evidence": [
+            {"kind": "candidate", "id": "product", "pointer": "", "note": "Product label, price/control overview, and three immediate leaf children."}
+          ]
+        },
+        "routes_fit_purpose": {
+          "status": "pass",
+          "reason": "The structure directly exposes the two prices and purchase control requested by the task.",
+          "evidence": [
+            {"kind": "context", "id": "one-product", "pointer": "/tasks", "note": "Tasks concern price conditions and finding the purchase control."},
+            {"kind": "candidate", "id": "product", "pointer": "/children", "note": "Regular, offer, buy order supports those routes."},
+            {"kind": "context", "id": "one-product", "pointer": "/presentation_contract/group_labels_and_summaries", "note": "Children are directly available at the current root."}
+          ]
+        }
+      }
+    },
+    "coverage": {
+      "status": "assessed",
+      "score": 3,
+      "reason": "Every meaningful source unit in this one-product scope has a specific presentation location, with no raw fallback or peer inconsistency. Incorrect offer meaning is the fidelity defect.",
+      "checks": {
+        "in_scope_units_represented": {
+          "status": "pass",
+          "reason": "The title appears at the root and the regular price, offer, and purchase control each have a dedicated leaf.",
+          "evidence": [
+            {"kind": "source", "id": "s_card", "pointer": "/children", "note": "The complete card contains the four represented units."},
+            {"kind": "candidate", "id": "product", "pointer": "", "note": "Title is represented at the root with separate regular, offer, and buy children."},
+            {"kind": "capture", "id": "synthetic-chair-capture", "pointer": "/complete_for_scope", "note": "Source inventory is complete for this scope."}
+          ]
+        },
+        "peers_treated_consistently": {
+          "status": "pass",
+          "reason": "Both comparable price items receive individual labeled DOM leaves with direct source references.",
+          "evidence": [
+            {"kind": "candidate", "id": "regular", "pointer": "", "note": "Separate price leaf targeting s_regular."},
+            {"kind": "candidate", "id": "offer", "pointer": "", "note": "Separate price leaf targeting s_offer."}
+          ]
+        }
+      }
+    },
+    "economy": {
+      "status": "assessed",
+      "score": 3,
+      "reason": "The brief optional overview introduces three distinct leaves without copying their values; hidden notes and optional source inspection do not burden default reading.",
+      "checks": {
+        "previews_inform_choice": {
+          "status": "pass",
+          "reason": "The root preview identifies prices and purchase control, and the child labels distinguish destinations without lengthy summaries.",
+          "evidence": [
+            {"kind": "candidate", "id": "product", "pointer": "/summary", "note": "Regular and conditional member prices, and the purchase control."},
+            {"kind": "candidate", "id": "product", "pointer": "/children", "note": "Only three distinct destinations require choice."}
+          ]
+        },
+        "default_reading_avoids_repetition": {
+          "status": "pass",
+          "reason": "Each price and action is presented once; the root does not repeat amounts and notes are not spoken.",
+          "evidence": [
+            {"kind": "candidate", "id": "product", "pointer": "/summary", "note": "Overview does not copy child price values or full control label."},
+            {"kind": "context", "id": "one-product", "pointer": "/presentation_contract", "note": "Overviews and source inspection are optional; candidate notes are not spoken."}
+          ]
+        }
+      }
+    },
+    "continuity": {
+      "status": "not_assessable",
+      "score": null,
+      "reason": "A static tree with no traces cannot establish focus preservation or update behavior; runtime assessment is optional here.",
+      "checks": {
+        "place_preserved": {
+          "status": "not_assessable",
+          "reason": "No interaction or focus-transition evidence is supplied.",
+          "evidence": [
+            {"kind": "capture", "id": "synthetic-chair-capture", "pointer": "/traces", "note": "Empty trace array."}
+          ]
+        },
+        "updates_scoped": {
+          "status": "not_assessable",
+          "reason": "No updates, stale-target invalidation, or before/after states are supplied.",
+          "evidence": [
+            {"kind": "capture", "id": "synthetic-chair-capture", "pointer": "/traces", "note": "Empty trace array."},
+            {"kind": "context", "id": "one-product", "pointer": "/runtime_assessment_required", "note": "False; missing runtime evidence does not prevent a complete static review."}
+          ]
+        }
+      }
+    }
+  },
+  "issues": [
+    {
+      "id": "false-offer-conditions",
+      "severity": "critical",
+      "primary_criterion": "fidelity",
+      "gate_ids": ["meaning_and_action_integrity"],
+      "affected_criteria": ["fidelity"],
+      "description": "The lower price is presented as available online to everyone, although the source restricts it to in-store IKEA Family members during Sep 8–Dec 24, 2026. This could change the reader's purchase decision and understanding of eligibility.",
+      "evidence": [
+        {"kind": "source", "id": "s_offer", "pointer": "/text", "note": "In-store only price $149.99. IKEA Family members. Offer valid Sep 8–Dec 24, 2026."},
+        {"kind": "candidate", "id": "offer", "pointer": "/label", "note": "Available online to everyone for $149.99."}
+      ],
+      "repair": "Replace the offer label with a source-grounded statement retaining $149.99, in-store only, IKEA Family membership, and validity dates Sep 8–Dec 24, 2026."
+    }
+  ],
+  "decision": "reject",
+  "next_actions": [
+    "Correct the offer label so its location, membership restriction, and dates accompany the lower price.",
+    "Re-evaluate the corrected candidate against the same source packet and scope."
+  ]
+}

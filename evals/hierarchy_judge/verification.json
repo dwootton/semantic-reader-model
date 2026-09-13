@@ -1,0 +1,21 @@
+{
+  "status": "passed_initial_checks",
+  "rubric_version": "semantic-hierarchy-judge/0.1",
+  "contract_tests": 17,
+  "lint": "ruff passed",
+  "typecheck": "mypy passed for 3 Python files",
+  "isolated_model_smoke_checks": 3,
+  "smoke_outcomes": [
+    "usable_candidate",
+    "reject",
+    "insufficient_evidence"
+  ],
+  "prepared_fixtures": 9,
+  "not_established": [
+    "Human-calibrated anchors or acceptance threshold",
+    "Production model API performance",
+    "Inter-rater reliability or critical-error miss rate",
+    "Improved blind-reader task outcomes",
+    "Comprehensive prompt-injection resistance"
+  ]
+}

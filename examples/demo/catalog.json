@@ -1,0 +1,18 @@
+{
+  "synthetic": true,
+  "datasets": [
+    {
+      "id": "synthetic-library",
+      "label": "Example Library (synthetic demo)",
+      "url": "https://example.invalid/library",
+      "variants": [
+        {
+          "id": "revised",
+          "label": "Illustrative hierarchy"
+        }
+      ],
+      "hasScreenshot": false,
+      "domCount": 16
+    }
+  ]
+}

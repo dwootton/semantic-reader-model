@@ -1,0 +1,612 @@
+{
+  "type": "object",
+  "properties": {
+    "rubric_version": {
+      "const": "semantic-hierarchy-judge/0.1"
+    },
+    "evaluation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "candidate_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "review": {
+      "type": "object",
+      "properties": {
+        "extent": {
+          "enum": [
+            "complete",
+            "partial",
+            "none"
+          ]
+        },
+        "source_sufficient": {
+          "type": "boolean"
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "extent",
+        "source_sufficient",
+        "limitations"
+      ],
+      "additionalProperties": false
+    },
+    "gates": {
+      "type": "object",
+      "properties": {
+        "structural_integrity": {
+          "$ref": "#/$defs/gate"
+        },
+        "meaning_and_action_integrity": {
+          "$ref": "#/$defs/gate"
+        },
+        "essential_access": {
+          "$ref": "#/$defs/gate"
+        }
+      },
+      "required": [
+        "structural_integrity",
+        "meaning_and_action_integrity",
+        "essential_access"
+      ],
+      "additionalProperties": false
+    },
+    "criteria": {
+      "type": "object",
+      "properties": {
+        "fidelity": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "assessed",
+                "not_assessable",
+                "not_applicable"
+              ]
+            },
+            "score": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 3
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            },
+            "checks": {
+              "type": "object",
+              "properties": {
+                "claims_supported": {
+                  "$ref": "#/$defs/check"
+                },
+                "qualifiers_preserved": {
+                  "$ref": "#/$defs/check"
+                }
+              },
+              "required": [
+                "claims_supported",
+                "qualifiers_preserved"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "status",
+            "score",
+            "reason",
+            "checks"
+          ],
+          "additionalProperties": false
+        },
+        "units": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "assessed",
+                "not_assessable",
+                "not_applicable"
+              ]
+            },
+            "score": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 3
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            },
+            "checks": {
+              "type": "object",
+              "properties": {
+                "membership_coherent": {
+                  "$ref": "#/$defs/check"
+                },
+                "dependent_parts_associated": {
+                  "$ref": "#/$defs/check"
+                }
+              },
+              "required": [
+                "membership_coherent",
+                "dependent_parts_associated"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "status",
+            "score",
+            "reason",
+            "checks"
+          ],
+          "additionalProperties": false
+        },
+        "labels": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "assessed",
+                "not_assessable",
+                "not_applicable"
+              ]
+            },
+            "score": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 3
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            },
+            "checks": {
+              "type": "object",
+              "properties": {
+                "labels_predict_contents": {
+                  "$ref": "#/$defs/check"
+                },
+                "destinations_distinguishable": {
+                  "$ref": "#/$defs/check"
+                }
+              },
+              "required": [
+                "labels_predict_contents",
+                "destinations_distinguishable"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "status",
+            "score",
+            "reason",
+            "checks"
+          ],
+          "additionalProperties": false
+        },
+        "organization": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "assessed",
+                "not_assessable",
+                "not_applicable"
+              ]
+            },
+            "score": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 3
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            },
+            "checks": {
+              "type": "object",
+              "properties": {
+                "levels_earn_their_place": {
+                  "$ref": "#/$defs/check"
+                },
+                "routes_fit_purpose": {
+                  "$ref": "#/$defs/check"
+                }
+              },
+              "required": [
+                "levels_earn_their_place",
+                "routes_fit_purpose"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "status",
+            "score",
+            "reason",
+            "checks"
+          ],
+          "additionalProperties": false
+        },
+        "coverage": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "assessed",
+                "not_assessable",
+                "not_applicable"
+              ]
+            },
+            "score": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 3
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            },
+            "checks": {
+              "type": "object",
+              "properties": {
+                "in_scope_units_represented": {
+                  "$ref": "#/$defs/check"
+                },
+                "peers_treated_consistently": {
+                  "$ref": "#/$defs/check"
+                }
+              },
+              "required": [
+                "in_scope_units_represented",
+                "peers_treated_consistently"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "status",
+            "score",
+            "reason",
+            "checks"
+          ],
+          "additionalProperties": false
+        },
+        "economy": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "assessed",
+                "not_assessable",
+                "not_applicable"
+              ]
+            },
+            "score": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 3
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            },
+            "checks": {
+              "type": "object",
+              "properties": {
+                "previews_inform_choice": {
+                  "$ref": "#/$defs/check"
+                },
+                "default_reading_avoids_repetition": {
+                  "$ref": "#/$defs/check"
+                }
+              },
+              "required": [
+                "previews_inform_choice",
+                "default_reading_avoids_repetition"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "status",
+            "score",
+            "reason",
+            "checks"
+          ],
+          "additionalProperties": false
+        },
+        "continuity": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "assessed",
+                "not_assessable",
+                "not_applicable"
+              ]
+            },
+            "score": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 3
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            },
+            "checks": {
+              "type": "object",
+              "properties": {
+                "place_preserved": {
+                  "$ref": "#/$defs/check"
+                },
+                "updates_scoped": {
+                  "$ref": "#/$defs/check"
+                }
+              },
+              "required": [
+                "place_preserved",
+                "updates_scoped"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "status",
+            "score",
+            "reason",
+            "checks"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "fidelity",
+        "units",
+        "labels",
+        "organization",
+        "coverage",
+        "economy",
+        "continuity"
+      ],
+      "additionalProperties": false
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "severity": {
+            "enum": [
+              "critical",
+              "major",
+              "minor"
+            ]
+          },
+          "primary_criterion": {
+            "enum": [
+              "fidelity",
+              "units",
+              "labels",
+              "organization",
+              "coverage",
+              "economy",
+              "continuity",
+              null
+            ]
+          },
+          "gate_ids": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "structural_integrity",
+                "meaning_and_action_integrity",
+                "essential_access"
+              ]
+            },
+            "uniqueItems": true
+          },
+          "affected_criteria": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "fidelity",
+                "units",
+                "labels",
+                "organization",
+                "coverage",
+                "economy",
+                "continuity"
+              ]
+            },
+            "uniqueItems": true
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/evidence"
+            }
+          },
+          "repair": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id",
+          "severity",
+          "primary_criterion",
+          "gate_ids",
+          "affected_criteria",
+          "description",
+          "evidence",
+          "repair"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "decision": {
+      "enum": [
+        "reject",
+        "insufficient_evidence",
+        "revise",
+        "usable_candidate"
+      ]
+    },
+    "next_actions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "maxItems": 5
+    }
+  },
+  "required": [
+    "rubric_version",
+    "evaluation_id",
+    "candidate_id",
+    "review",
+    "gates",
+    "criteria",
+    "issues",
+    "decision",
+    "next_actions"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:semantic-hierarchy-judge:result:0.1",
+  "$defs": {
+    "evidence": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "source",
+            "candidate",
+            "image",
+            "trace",
+            "preflight",
+            "capture",
+            "context"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pointer": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "pointer",
+        "note"
+      ],
+      "additionalProperties": false
+    },
+    "check": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "not_assessable",
+            "not_applicable"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        }
+      },
+      "required": [
+        "status",
+        "reason",
+        "evidence"
+      ],
+      "additionalProperties": false
+    },
+    "gate": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "not_assessable"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        }
+      },
+      "required": [
+        "status",
+        "reason",
+        "evidence"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

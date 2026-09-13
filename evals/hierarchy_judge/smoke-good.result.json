@@ -1,0 +1,482 @@
+{
+  "rubric_version": "semantic-hierarchy-judge/0.1",
+  "evaluation_id": "example-good",
+  "candidate_id": "candidate-neutral",
+  "review": {
+    "extent": "complete",
+    "source_sufficient": true,
+    "limitations": [
+      "The supplied static evidence supports the requested listing review but does not establish runtime interaction, focus restoration, or update stability."
+    ]
+  },
+  "gates": {
+    "structural_integrity": {
+      "status": "pass",
+      "reason": "The four-node projection has one existing root, three singly parented DOM leaves, no cycles or unresolved children, and valid source references.",
+      "evidence": [
+        {
+          "kind": "candidate",
+          "id": "product",
+          "pointer": "/children",
+          "note": "The root directly contains regular, offer, and buy; each is a childless DOM node with one existing source reference."
+        },
+        {
+          "kind": "preflight",
+          "id": "graph",
+          "pointer": "/status",
+          "note": "Trusted graph check passes."
+        },
+        {
+          "kind": "preflight",
+          "id": "references",
+          "pointer": "/status",
+          "note": "Trusted targeting-reference check passes."
+        }
+      ]
+    },
+    "meaning_and_action_integrity": {
+      "status": "pass",
+      "reason": "The product identity, both prices, all offer conditions, and purchase identity are preserved without inventing actions or changing state.",
+      "evidence": [
+        {
+          "kind": "candidate",
+          "id": "product",
+          "pointer": "/label",
+          "note": "CENTERHALV office chair matches s_title."
+        },
+        {
+          "kind": "candidate",
+          "id": "regular",
+          "pointer": "/label",
+          "note": "The $199.99 amount remains explicitly the regular price."
+        },
+        {
+          "kind": "source",
+          "id": "s_offer",
+          "pointer": "/text",
+          "note": "The lower price requires an in-store IKEA Family offer within the stated 2026 dates."
+        },
+        {
+          "kind": "candidate",
+          "id": "offer",
+          "pointer": "/label",
+          "note": "The $149.99 offer retains in-store, IKEA Family, and Sep 8–Dec 24, 2026 context."
+        },
+        {
+          "kind": "source",
+          "id": "s_buy",
+          "pointer": "/states",
+          "note": "The original purchase button is enabled."
+        },
+        {
+          "kind": "candidate",
+          "id": "buy",
+          "pointer": "/source_refs",
+          "note": "The purchase leaf targets s_buy; the contract presents original control identities."
+        }
+      ]
+    },
+    "essential_access": {
+      "status": "pass",
+      "reason": "Every required item is available through the product overview or its directly available children; no descendant access is inferred from an ancestor reference.",
+      "evidence": [
+        {
+          "kind": "context",
+          "id": "one-product",
+          "pointer": "/required_source_ids",
+          "note": "The required title, regular price, conditional offer, and purchase control are all represented."
+        },
+        {
+          "kind": "candidate",
+          "id": "product",
+          "pointer": "/label",
+          "note": "The root label provides the complete product title."
+        },
+        {
+          "kind": "candidate",
+          "id": "product",
+          "pointer": "/children",
+          "note": "regular, offer, and buy expose the remaining three required sources directly."
+        },
+        {
+          "kind": "context",
+          "id": "one-product",
+          "pointer": "/presentation_contract",
+          "note": "Group overviews are available, children are directly available, and DOM labels/readable values and original control identities are presented."
+        }
+      ]
+    }
+  },
+  "criteria": {
+    "fidelity": {
+      "status": "assessed",
+      "score": 3,
+      "reason": "The complete bounded listing preserves source meaning and interpretation-changing qualifiers.",
+      "checks": {
+        "claims_supported": {
+          "status": "pass",
+          "reason": "All four displayed identities or facts agree with the supplied source; the summary accurately describes the available branches.",
+          "evidence": [
+            {
+              "kind": "capture",
+              "id": "synthetic-chair-capture",
+              "pointer": "/elements",
+              "note": "Inspected all five source elements against the four presentation nodes."
+            },
+            {
+              "kind": "candidate",
+              "id": "product",
+              "pointer": "/summary",
+              "note": "The overview promises regular and conditional member prices and the purchase control, which are present."
+            }
+          ]
+        },
+        "qualifiers_preserved": {
+          "status": "pass",
+          "reason": "The regular price remains distinguished from the lower offer, whose channel, membership condition, and validity dates remain attached.",
+          "evidence": [
+            {
+              "kind": "source",
+              "id": "s_regular",
+              "pointer": "/text",
+              "note": "Regular price $199.99."
+            },
+            {
+              "kind": "candidate",
+              "id": "regular",
+              "pointer": "/label",
+              "note": "Regular price: $199.99."
+            },
+            {
+              "kind": "source",
+              "id": "s_offer",
+              "pointer": "/text",
+              "note": "In-store only; IKEA Family members; Sep 8–Dec 24, 2026."
+            },
+            {
+              "kind": "candidate",
+              "id": "offer",
+              "pointer": "/label",
+              "note": "The offer includes its amount and all these conditions together."
+            }
+          ]
+        }
+      }
+    },
+    "units": {
+      "status": "assessed",
+      "score": 3,
+      "reason": "The listing is one coherent product unit with distinct regular-price, conditional-offer, and purchase children.",
+      "checks": {
+        "membership_coherent": {
+          "status": "pass",
+          "reason": "Every child belongs to the same source product card and no unrelated content is included.",
+          "evidence": [
+            {
+              "kind": "source",
+              "id": "s_card",
+              "pointer": "/children",
+              "note": "The source card contains the product title, both prices, and its purchase control."
+            },
+            {
+              "kind": "candidate",
+              "id": "product",
+              "pointer": "/children",
+              "note": "The presentation keeps both prices and purchase control under the named chair."
+            }
+          ]
+        },
+        "dependent_parts_associated": {
+          "status": "pass",
+          "reason": "Offer conditions remain in their price leaf, and the purchase control retains explicit product identity.",
+          "evidence": [
+            {
+              "kind": "candidate",
+              "id": "offer",
+              "pointer": "/label",
+              "note": "The amount, channel, membership condition, and dates are a single readable unit."
+            },
+            {
+              "kind": "candidate",
+              "id": "buy",
+              "pointer": "/label",
+              "note": "Add CENTERHALV to cart identifies the object of the action."
+            },
+            {
+              "kind": "candidate",
+              "id": "buy",
+              "pointer": "/source_refs",
+              "note": "The control remains associated with s_buy."
+            }
+          ]
+        }
+      }
+    },
+    "labels": {
+      "status": "assessed",
+      "score": 3,
+      "reason": "Labels identify the product, distinguish its price types, and name the purchase action predictably.",
+      "checks": {
+        "labels_predict_contents": {
+          "status": "pass",
+          "reason": "Each label accurately names its complete content or action.",
+          "evidence": [
+            {
+              "kind": "candidate",
+              "id": "product",
+              "pointer": "/label",
+              "note": "The source product name orients the listing."
+            },
+            {
+              "kind": "candidate",
+              "id": "regular",
+              "pointer": "/label",
+              "note": "Regular price identifies the ordinary price branch."
+            },
+            {
+              "kind": "candidate",
+              "id": "offer",
+              "pointer": "/label",
+              "note": "In-store IKEA Family offer identifies the conditional branch."
+            },
+            {
+              "kind": "candidate",
+              "id": "buy",
+              "pointer": "/label",
+              "note": "The original purchase action name is retained."
+            }
+          ]
+        },
+        "destinations_distinguishable": {
+          "status": "pass",
+          "reason": "The two price destinations are distinguished by regular versus conditional-offer wording; the purchase control is separately named.",
+          "evidence": [
+            {
+              "kind": "candidate",
+              "id": "regular",
+              "pointer": "/label",
+              "note": "Regular price: $199.99."
+            },
+            {
+              "kind": "candidate",
+              "id": "offer",
+              "pointer": "/label",
+              "note": "In-store IKEA Family offer: $149.99, Sep 8–Dec 24, 2026."
+            },
+            {
+              "kind": "candidate",
+              "id": "buy",
+              "pointer": "/label",
+              "note": "Add CENTERHALV to cart."
+            }
+          ]
+        }
+      }
+    },
+    "organization": {
+      "status": "assessed",
+      "score": 3,
+      "reason": "The product root supplies object context and direct choices that fit price comparison and purchase discovery.",
+      "checks": {
+        "levels_earn_their_place": {
+          "status": "pass",
+          "reason": "The sole group supplies necessary product identity and an overview; expansion exposes three useful destinations without intermediate wrappers.",
+          "evidence": [
+            {
+              "kind": "candidate",
+              "id": "product",
+              "pointer": "/label",
+              "note": "The root supplies the chair's identity."
+            },
+            {
+              "kind": "candidate",
+              "id": "product",
+              "pointer": "/children",
+              "note": "Only the regular price, offer, and purchase control appear beneath it."
+            }
+          ]
+        },
+        "routes_fit_purpose": {
+          "status": "pass",
+          "reason": "The direct route through regular price, conditional offer, and purchase control matches both declared tasks.",
+          "evidence": [
+            {
+              "kind": "context",
+              "id": "one-product",
+              "pointer": "/tasks",
+              "note": "The tasks are to distinguish price conditions and find the purchase control."
+            },
+            {
+              "kind": "candidate",
+              "id": "product",
+              "pointer": "/children",
+              "note": "The child order presents the two price types before the purchase action."
+            },
+            {
+              "kind": "context",
+              "id": "one-product",
+              "pointer": "/presentation_contract/group_labels_and_summaries",
+              "note": "Children are directly available at the current root."
+            }
+          ]
+        }
+      }
+    },
+    "coverage": {
+      "status": "assessed",
+      "score": 3,
+      "reason": "All meaningful source content and the single control are represented at usable granularity within the complete one-product scope.",
+      "checks": {
+        "in_scope_units_represented": {
+          "status": "pass",
+          "reason": "The title appears in the product label; both prices and the purchase control each have a directly available leaf.",
+          "evidence": [
+            {
+              "kind": "capture",
+              "id": "synthetic-chair-capture",
+              "pointer": "/complete_for_scope",
+              "note": "The source is complete for the caller's one-product scope."
+            },
+            {
+              "kind": "capture",
+              "id": "synthetic-chair-capture",
+              "pointer": "/elements",
+              "note": "All five source elements were inspected; the card is represented by the root, its title by the root label, and the remaining contents by leaves."
+            },
+            {
+              "kind": "candidate",
+              "id": "product",
+              "pointer": "/children",
+              "note": "The three children expose all price and purchase content."
+            }
+          ]
+        },
+        "peers_treated_consistently": {
+          "status": "pass",
+          "reason": "Both comparable price facts receive explicit readable leaves, with additional context retained where the conditional offer requires it.",
+          "evidence": [
+            {
+              "kind": "candidate",
+              "id": "regular",
+              "pointer": "/label",
+              "note": "The regular price is fully developed as one leaf."
+            },
+            {
+              "kind": "candidate",
+              "id": "offer",
+              "pointer": "/label",
+              "note": "The conditional price is equally developed, including its conditions."
+            }
+          ]
+        }
+      }
+    },
+    "economy": {
+      "status": "assessed",
+      "score": 3,
+      "reason": "The optional overview supports choice while ordinary reading exposes each fact once without mandatory source-inspection narration.",
+      "checks": {
+        "previews_inform_choice": {
+          "status": "pass",
+          "reason": "The overview describes the available categories and the child labels supply the distinctions needed to select a price or action.",
+          "evidence": [
+            {
+              "kind": "candidate",
+              "id": "product",
+              "pointer": "/summary",
+              "note": "Regular and conditional member prices, and the purchase control."
+            },
+            {
+              "kind": "candidate",
+              "id": "regular",
+              "pointer": "/label",
+              "note": "The regular amount is explicit."
+            },
+            {
+              "kind": "candidate",
+              "id": "offer",
+              "pointer": "/label",
+              "note": "The offer amount and conditions discriminate it from the regular price."
+            },
+            {
+              "kind": "candidate",
+              "id": "buy",
+              "pointer": "/label",
+              "note": "The purchase action is clear."
+            }
+          ]
+        },
+        "default_reading_avoids_repetition": {
+          "status": "pass",
+          "reason": "The overview is optional and contains no copied price details; each price and the purchase control occur once in ordinary leaf reading.",
+          "evidence": [
+            {
+              "kind": "context",
+              "id": "one-product",
+              "pointer": "/presentation_contract",
+              "note": "Overviews and source inspection are optional, notes are not spoken, and DOM labels/readable values are presented."
+            },
+            {
+              "kind": "candidate",
+              "id": "product",
+              "pointer": "/summary",
+              "note": "The summary names categories without repeating amounts or dates."
+            },
+            {
+              "kind": "candidate",
+              "id": "product",
+              "pointer": "/children",
+              "note": "There is one leaf for each price and one for the purchase control."
+            }
+          ]
+        }
+      }
+    },
+    "continuity": {
+      "status": "not_assessable",
+      "score": null,
+      "reason": "No implementation or transition evidence establishes runtime continuity; it is optional for this static review.",
+      "checks": {
+        "place_preserved": {
+          "status": "not_assessable",
+          "reason": "The static projection cannot establish focus, reading position, or return-path behavior across transitions.",
+          "evidence": [
+            {
+              "kind": "capture",
+              "id": "synthetic-chair-capture",
+              "pointer": "/traces",
+              "note": "No traces are supplied."
+            },
+            {
+              "kind": "context",
+              "id": "one-product",
+              "pointer": "/runtime_assessment_required",
+              "note": "Runtime assessment is not required."
+            }
+          ]
+        },
+        "updates_scoped": {
+          "status": "not_assessable",
+          "reason": "No updates or target-invalidating transitions are shown, so stability and stale-target handling cannot be established.",
+          "evidence": [
+            {
+              "kind": "capture",
+              "id": "synthetic-chair-capture",
+              "pointer": "/traces",
+              "note": "No update traces are supplied."
+            },
+            {
+              "kind": "context",
+              "id": "one-product",
+              "pointer": "/runtime_assessment_required",
+              "note": "Runtime assessment is not required."
+            }
+          ]
+        }
+      }
+    }
+  },
+  "issues": [],
+  "decision": "usable_candidate",
+  "next_actions": []
+}

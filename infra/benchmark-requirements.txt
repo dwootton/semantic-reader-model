@@ -1,0 +1,9 @@
+# Python >=3.12. BrowserGym imports the separate webarena adapter, which its
+# verified package does not list; pin all three packages to one source commit.
+browsergym-core @ git+https://github.com/ServiceNow/BrowserGym.git@9e779f087de9a65668b6974d11f9ce9816026e96#subdirectory=browsergym/core
+browsergym-webarena @ git+https://github.com/ServiceNow/BrowserGym.git@9e779f087de9a65668b6974d11f9ce9816026e96#subdirectory=browsergym/webarena
+browsergym-webarena-verified @ git+https://github.com/ServiceNow/BrowserGym.git@9e779f087de9a65668b6974d11f9ce9816026e96#subdirectory=browsergym/webarena_verified
+webarena-verified @ git+https://github.com/ServiceNow/webarena-verified.git@6473f72db5dcefc97b5725b59e734504edc28a21
+# BrowserGym core pins this browser client; install its matching Chromium binary
+# with `python -m playwright install --with-deps chromium` on the VM.
+playwright==1.44.0

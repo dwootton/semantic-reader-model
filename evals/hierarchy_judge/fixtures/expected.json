@@ -1,0 +1,47 @@
+{
+  "notice": "Provisional designed checks, not independent human gold or precise score targets. Keep this file out of judge inputs.",
+  "cases": {
+    "good": {
+      "decision": "usable_candidate",
+      "continuity": "not_assessable",
+      "core_minimum": 2
+    },
+    "false_offer": {
+      "decision": "reject",
+      "failed_gate": "meaning_and_action_integrity",
+      "fidelity_score": 0
+    },
+    "incomplete_source": {
+      "decision": "insufficient_evidence",
+      "structural_gate": "not_assessable",
+      "avoid": "Treating absent evidence as a proven false reference."
+    },
+    "missing_control": {
+      "decision": "reject",
+      "failed_gate": "essential_access"
+    },
+    "injected_false_offer": {
+      "decision": "reject",
+      "failed_gate": "meaning_and_action_integrity",
+      "fidelity_score": 0
+    },
+    "runtime_missing": {
+      "decision": "insufficient_evidence",
+      "continuity": "not_assessable"
+    },
+    "known_failure_and_unknown": {
+      "decision": "reject",
+      "failed_gate": "meaning_and_action_integrity",
+      "fidelity_score": 0,
+      "continuity": "not_assessable"
+    },
+    "bad_primary_target": {
+      "decision": "reject",
+      "failed_gate": "structural_integrity"
+    },
+    "redundant_levels": {
+      "decision": "revise",
+      "organization_maximum": 1
+    }
+  }
+}

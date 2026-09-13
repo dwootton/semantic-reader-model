@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Hierarchy Trial · Semantic Inspector</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23142335'/%3E%3Cpath d='M8 8v16m0-8h16M24 8v16' stroke='%236fe0cd' stroke-width='3' fill='none'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="compare.css">
+  <script type="module" src="compare.mjs"></script>
+</head>
+<body>
+  <header class="app-header">
+    <a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true">⊢⊣</span><span>Semantic Inspector<span class="brand-caption">← Back to capture explorer</span></span></a>
+    <span id="backend-badge" class="backend-badge">Connecting to runner…</span>
+  </header>
+  <main>
+    <section class="intro" aria-labelledby="page-title">
+      <div><span class="eyebrow">TRAINING TASK / A SMALL COMPARISON</span><h1 id="page-title">One page. Two ways to find its meaning.</h1><p>Try a complete hierarchy in one pass, or group bounded regions and compose them. Inspect the sources to decide which structure helps you read.</p></div>
+      <p class="scope-note">This trial compares prompting approaches. No model is fine-tuned here. It uses saved captures; it takes no actions on live websites.</p>
+    </section>
+    <section class="run-panel" aria-label="Set up a comparison">
+      <div class="run-controls">
+        <label class="capture-control">Capture<select id="capture" disabled><option>Loading captures…</option></select></label>
+        <label class="model-control">Model for next run<select id="model" disabled><option>Loading models…</option></select></label>
+        <label class="input-control">Input for next run<select id="input-mode" disabled><option>Loading input modes…</option></select></label>
+        <label>Region size<select id="region-size" disabled><option value="80">80 source nodes</option><option value="160" selected>160 source nodes</option><option value="320">320 source nodes</option></select></label>
+        <div class="run-actions" role="group" aria-label="Run a strategy"><button id="run-whole" disabled>Run whole page</button><button id="run-regions" disabled>Compose regions</button><button id="run-both" class="primary" disabled>Run both <span aria-hidden="true">↗</span></button></div>
+      </div>
+      <div class="run-context"><p id="capture-note">Choose a capture to begin.</p><p id="backend-note"></p></div>
+      <details class="method-note"><summary>What changes between these approaches?</summary><p id="method-description">Both approaches use the same source evidence and refer back to source IDs. “Run both” keeps the capture, model, and input mode fixed for a comparison.</p></details>
+    </section>
+    <div class="job-bar"><p id="job-status" role="status" aria-live="polite">Ready when you are.</p><div class="job-actions"><label class="sr-only" for="recent-jobs">Reopen a saved run</label><select id="recent-jobs"><option value="">Reopen a saved run…</option></select><button id="resume" hidden>Resume status checks</button><button id="download" disabled>Download run JSON</button></div></div>
+    <div id="error" class="error" role="alert" hidden></div>
+    <div id="job-meta" class="job-meta" hidden></div>
+    <div class="comparison" aria-label="Strategy results">
+      <section class="result-pane" aria-labelledby="whole-title">
+        <header class="pane-heading"><div><span class="eyebrow">A / ONE INPUT</span><h2 id="whole-title">Whole page</h2><p id="whole-description">One pass sees all retained source nodes.</p></div><span id="whole-state" class="result-state">Not run</span></header>
+        <div id="whole-metrics" class="metrics"></div>
+        <div class="tree-tools"><label><span class="sr-only">Search whole-page hierarchy</span><input id="whole-search" type="search" placeholder="Find a group, text, or source ID…" autocomplete="off" disabled></label><button id="whole-expand" disabled>Expand all</button><button id="whole-collapse" disabled>Collapse</button></div>
+        <div id="whole-tree" class="hierarchy" aria-label="Whole-page hierarchy"><p class="empty">The complete hierarchy will appear here.<span>Start with “Run both” to see the approaches side by side.</span></p></div>
+        <div id="whole-warnings" class="warnings" hidden></div>
+      </section>
+      <section class="result-pane" aria-labelledby="regions-title">
+        <header class="pane-heading"><div><span class="eyebrow">B / BOUNDED INPUTS</span><h2 id="regions-title">Composed regions</h2><p id="regions-description">Local groups become a page hierarchy.</p></div><span id="regions-state" class="result-state">Not run</span></header>
+        <div id="regions-metrics" class="metrics"></div>
+        <div class="tree-tools"><label><span class="sr-only">Search composed-regions hierarchy</span><input id="regions-search" type="search" placeholder="Find a group, text, or source ID…" autocomplete="off" disabled></label><button id="regions-expand" disabled>Expand all</button><button id="regions-collapse" disabled>Collapse</button></div>
+        <div id="regions-tree" class="hierarchy" aria-label="Composed-regions hierarchy"><p class="empty">The composed hierarchy will appear here.<span>Select any result node to inspect its source evidence below.</span></p></div>
+        <div id="regions-warnings" class="warnings" hidden></div>
+      </section>
+    </div>
+    <p class="measurement-note">Metrics describe this run. <span id="coverage-note">Annotation coverage measures model grouping of retained sources, not whether the groups are useful.</span> <span id="timing-note">Runs are sequential; elapsed timing includes model execution.</span> Check titles, membership, nesting, and missing content yourself.</p>
+    <section class="evidence-panel" aria-labelledby="evidence-title">
+      <header class="evidence-heading"><div><span class="eyebrow">FOLLOW THE CONNECTION</span><h2 id="evidence-title">Source evidence</h2></div><label class="checkbox-label"><input id="include-descendants" type="checkbox" checked> Include child references</label></header>
+      <div id="evidence"><p class="empty">Select a node label in either hierarchy. Its exact saved source records will appear here.</p></div>
+    </section>
+    <section class="records-panel" aria-labelledby="records-title"><header class="evidence-heading"><div><span class="eyebrow">LOOK INSIDE THE RUN</span><h2 id="records-title">Prompts, outputs &amp; partitions</h2></div></header><div id="records"><p class="empty">Every model call and region partition will be available after a run.</p></div></section>
+  </main>
+</body>
+</html>

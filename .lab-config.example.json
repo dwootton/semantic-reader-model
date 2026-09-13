@@ -1,0 +1,5 @@
+{
+  "account": "YOUR_APPROVED_USER@example.com",
+  "project": "YOUR_APPROVED_PROJECT_ID",
+  "configuration": "YOUR_NAMED_GCLOUD_CONFIGURATION"
+}

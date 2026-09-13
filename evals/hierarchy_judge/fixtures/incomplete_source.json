@@ -1,0 +1,132 @@
+{
+  "evaluation_id": "incomplete-source",
+  "evaluation_context": {
+    "scope_id": "one-product",
+    "purpose": "Understand one chair listing, distinguish regular and conditional prices, and find its purchase control.",
+    "tasks": [
+      "Identify the regular price and the conditions of the lower offer.",
+      "Find the purchase control."
+    ],
+    "required_source_ids": [
+      "s_title",
+      "s_regular",
+      "s_offer",
+      "s_buy"
+    ],
+    "presentation_contract": {
+      "group_labels_and_summaries": "Optional overviews; children are directly available at the current root.",
+      "dom_leaves": "Labels/readable values and original control identities are presented; source inspection is optional.",
+      "candidate_notes_spoken": false,
+      "source_subtree_fallback": "None; ancestor references alone do not expose descendants."
+    },
+    "runtime_assessment_required": false,
+    "preflight_trusted": true
+  },
+  "source": {
+    "capture_id": "synthetic-chair-capture",
+    "complete_for_scope": false,
+    "elements": [
+      {
+        "id": "s_card",
+        "role": "group",
+        "children": [
+          "s_title",
+          "s_regular",
+          "s_offer",
+          "s_buy"
+        ]
+      },
+      {
+        "id": "s_title",
+        "role": "heading",
+        "text": "CENTERHALV office chair"
+      },
+      {
+        "id": "s_regular",
+        "role": "text",
+        "text": "Regular price $199.99"
+      },
+      {
+        "id": "s_buy",
+        "role": "button",
+        "name": "Add CENTERHALV to cart",
+        "states": {
+          "disabled": false
+        },
+        "actions": [
+          "press"
+        ]
+      }
+    ],
+    "images": [],
+    "traces": []
+  },
+  "candidate": {
+    "id": "candidate-neutral",
+    "root_id": "product",
+    "nodes": [
+      {
+        "id": "product",
+        "kind": "group",
+        "label": "CENTERHALV office chair",
+        "summary": "Regular and conditional member prices, and the purchase control.",
+        "children": [
+          "regular",
+          "offer",
+          "buy"
+        ],
+        "source_refs": [
+          "s_card",
+          "s_title"
+        ]
+      },
+      {
+        "id": "regular",
+        "kind": "dom",
+        "label": "Regular price: $199.99",
+        "children": [],
+        "source_refs": [
+          "s_regular"
+        ]
+      },
+      {
+        "id": "offer",
+        "kind": "dom",
+        "label": "In-store IKEA Family offer: $149.99, Sep 8\u2013Dec 24, 2026",
+        "children": [],
+        "source_refs": [
+          "s_offer"
+        ]
+      },
+      {
+        "id": "buy",
+        "kind": "dom",
+        "label": "Add CENTERHALV to cart",
+        "children": [],
+        "source_refs": [
+          "s_buy"
+        ]
+      }
+    ]
+  },
+  "preflight": {
+    "graph": {
+      "status": "pass",
+      "details": [
+        "Connected acyclic single-parent graph."
+      ]
+    },
+    "references": {
+      "status": "not_assessable",
+      "details": [
+        "offer: source s_offer"
+      ]
+    },
+    "required_sources": {
+      "status": "pass",
+      "details": [
+        "Required IDs are referenced somewhere; evaluate presentation access separately."
+      ]
+    }
+  }
+}

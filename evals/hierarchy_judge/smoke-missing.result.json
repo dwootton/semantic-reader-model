@@ -1,0 +1,219 @@
+{
+  "rubric_version": "semantic-hierarchy-judge/0.1",
+  "evaluation_id": "incomplete-source",
+  "candidate_id": "candidate-neutral",
+  "review": {
+    "extent": "partial",
+    "source_sufficient": false,
+    "limitations": [
+      "The capture explicitly is incomplete for the requested scope and omits the s_offer element. Its price, eligibility, location, dates, role, and any other relevant content cannot be verified.",
+      "The supplied presentation graph and contract support static organization checks, but the missing offer and incomplete inventory prevent whole-scope integrity and coverage conclusions.",
+      "No interaction traces or implementation evidence are supplied; continuity is unassessable and is not required for this static evaluation."
+    ]
+  },
+  "gates": {
+    "structural_integrity": {
+      "status": "not_assessable",
+      "reason": "The supplied presentation graph is connected and valid, but offer targets s_offer, which is absent from an explicitly incomplete source inventory. This is an unresolved reference, not a confirmed nonexistent target.",
+      "evidence": [
+        {"kind": "preflight", "id": "graph", "pointer": "/status", "note": "Trusted graph check passes; the four supplied nodes also form a single-root tree."},
+        {"kind": "candidate", "id": "offer", "pointer": "/source_refs/0", "note": "The DOM leaf references s_offer."},
+        {"kind": "capture", "id": "synthetic-chair-capture", "pointer": "/complete_for_scope", "note": "False; omission does not establish source-target absence."}
+      ]
+    },
+    "meaning_and_action_integrity": {
+      "status": "not_assessable",
+      "reason": "The chair name, regular price, and purchase-control identity match the available source. The conditional offer's material claims cannot be checked because its source element is missing.",
+      "evidence": [
+        {"kind": "source", "id": "s_title", "pointer": "/text", "note": "CENTERHALV office chair matches the root label."},
+        {"kind": "source", "id": "s_regular", "pointer": "/text", "note": "Regular price $199.99 matches regular."},
+        {"kind": "source", "id": "s_buy", "pointer": "/name", "note": "Add CENTERHALV to cart matches buy and retains its original control identity under the contract."},
+        {"kind": "candidate", "id": "offer", "pointer": "/label", "note": "In-store IKEA Family eligibility, $149.99, and Sep 8–Dec 24, 2026 lack supplied source content for verification."}
+      ]
+    },
+    "essential_access": {
+      "status": "not_assessable",
+      "reason": "Known title, regular price, and purchase control have presentation routes. The required offer is referenced and presented, but access to its actual essential content cannot be established without its source evidence.",
+      "evidence": [
+        {"kind": "context", "id": "one-product", "pointer": "/required_source_ids", "note": "Required content includes s_title, s_regular, s_offer, and s_buy."},
+        {"kind": "candidate", "id": "product", "pointer": "/children", "note": "Regular, offer, and buy are directly available children; the root carries the source title."},
+        {"kind": "context", "id": "one-product", "pointer": "/presentation_contract", "note": "DOM labels and original control identities are presented; ancestor references do not expose descendants."},
+        {"kind": "preflight", "id": "references", "pointer": "/details", "note": "The required offer reference cannot be verified against the supplied inventory."}
+      ]
+    }
+  },
+  "criteria": {
+    "fidelity": {
+      "status": "not_assessable",
+      "score": null,
+      "reason": "Available source facts match, but a central conditional price and its qualifiers lack source evidence; no material contradiction is established.",
+      "checks": {
+        "claims_supported": {
+          "status": "not_assessable",
+          "reason": "The regular price and purchase label are supported; the lower price and membership claim cannot be verified.",
+          "evidence": [
+            {"kind": "source", "id": "s_regular", "pointer": "/text", "note": "Regular price $199.99 is supported."},
+            {"kind": "source", "id": "s_buy", "pointer": "/name", "note": "The purchase-control label matches."},
+            {"kind": "candidate", "id": "offer", "pointer": "/label", "note": "The conditional offer refers to omitted source content."}
+          ]
+        },
+        "qualifiers_preserved": {
+          "status": "not_assessable",
+          "reason": "The candidate includes location, membership, and date qualifiers, but the packet cannot establish whether these are accurate or complete.",
+          "evidence": [
+            {"kind": "candidate", "id": "offer", "pointer": "/label", "note": "In-store IKEA Family offer: $149.99, Sep 8–Dec 24, 2026."},
+            {"kind": "capture", "id": "synthetic-chair-capture", "pointer": "/elements", "note": "No s_offer element provides the original offer wording."}
+          ]
+        }
+      }
+    },
+    "units": {
+      "status": "assessed",
+      "score": 3,
+      "reason": "The supplied source relationships establish one product containing its prices and purchase control, and the candidate preserves those boundaries. Offer accuracy remains a separate fidelity uncertainty.",
+      "checks": {
+        "membership_coherent": {
+          "status": "pass",
+          "reason": "All presentation children belong to the product identified by the root; the available source card explicitly associates the same source IDs.",
+          "evidence": [
+            {"kind": "source", "id": "s_card", "pointer": "/children", "note": "The card groups title, regular price, offer, and purchase control."},
+            {"kind": "candidate", "id": "product", "pointer": "/children", "note": "The product groups regular, offer, and buy."}
+          ]
+        },
+        "dependent_parts_associated": {
+          "status": "pass",
+          "reason": "Price labels and values remain together; the proposed offer's conditions remain attached to its amount, and the purchase label names the chair.",
+          "evidence": [
+            {"kind": "candidate", "id": "regular", "pointer": "/label", "note": "Regular status and $199.99 are one unit."},
+            {"kind": "candidate", "id": "offer", "pointer": "/label", "note": "The proposed amount and conditions are presented together."},
+            {"kind": "candidate", "id": "buy", "pointer": "/label", "note": "The purchase action explicitly identifies CENTERHALV."}
+          ]
+        }
+      }
+    },
+    "labels": {
+      "status": "assessed",
+      "score": 3,
+      "reason": "The visible names identify the product and distinguish its regular price, conditional offer, and purchase control without generic destinations.",
+      "checks": {
+        "labels_predict_contents": {
+          "status": "pass",
+          "reason": "The product name and overview accurately describe the kinds of children presented; each leaf identifies its content or action.",
+          "evidence": [
+            {"kind": "candidate", "id": "product", "pointer": "/label", "note": "CENTERHALV office chair provides product orientation."},
+            {"kind": "candidate", "id": "product", "pointer": "/summary", "note": "The overview names prices and the purchase control, matching the presented child categories."}
+          ]
+        },
+        "destinations_distinguishable": {
+          "status": "pass",
+          "reason": "The three destinations use specific price-type and action names within a single named product.",
+          "evidence": [
+            {"kind": "candidate", "id": "regular", "pointer": "/label", "note": "Regular price is explicitly identified."},
+            {"kind": "candidate", "id": "offer", "pointer": "/label", "note": "The conditional offer has a distinct name."},
+            {"kind": "candidate", "id": "buy", "pointer": "/label", "note": "Add CENTERHALV to cart identifies the action and object."}
+          ]
+        }
+      }
+    },
+    "organization": {
+      "status": "assessed",
+      "score": 3,
+      "reason": "One product context with directly available prices and purchase control provides useful routes for the declared tasks, with no redundant intermediate levels.",
+      "checks": {
+        "levels_earn_their_place": {
+          "status": "pass",
+          "reason": "The sole group supplies product identity and a useful overview; its three children directly expose the relevant choices.",
+          "evidence": [
+            {"kind": "candidate", "id": "product", "pointer": "/children", "note": "Only regular, offer, and buy appear below the product group."},
+            {"kind": "candidate", "id": "product", "pointer": "/label", "note": "The root supplies the shared product context."}
+          ]
+        },
+        "routes_fit_purpose": {
+          "status": "pass",
+          "reason": "The regular and conditional price entries precede the purchase control and are directly accessible under the supplied contract.",
+          "evidence": [
+            {"kind": "context", "id": "one-product", "pointer": "/tasks", "note": "Tasks concern comparing price conditions and finding the purchase control."},
+            {"kind": "context", "id": "one-product", "pointer": "/presentation_contract/group_labels_and_summaries", "note": "Children are directly available at the current root."},
+            {"kind": "candidate", "id": "product", "pointer": "/children", "note": "The order is regular price, offer, then purchase."}
+          ]
+        }
+      }
+    },
+    "coverage": {
+      "status": "not_assessable",
+      "score": null,
+      "reason": "All required IDs are referenced, but the missing offer and incomplete capture prevent determining meaningful coverage or the complete set of comparable content.",
+      "checks": {
+        "in_scope_units_represented": {
+          "status": "not_assessable",
+          "reason": "Visible title, regular price, and purchase control are represented; the required offer's completeness and any uncaptured essential content are unknown.",
+          "evidence": [
+            {"kind": "preflight", "id": "required_sources", "pointer": "/details", "note": "Reference presence alone does not establish usable coverage."},
+            {"kind": "capture", "id": "synthetic-chair-capture", "pointer": "/complete_for_scope", "note": "The source explicitly does not cover the entire scope."},
+            {"kind": "candidate", "id": "offer", "pointer": "/source_refs", "note": "The offer points to omitted source evidence."}
+          ]
+        },
+        "peers_treated_consistently": {
+          "status": "not_assessable",
+          "reason": "The two proposed price entries receive similar treatment, but an incomplete source inventory cannot establish the full set of relevant peer content or whether their development is comparable.",
+          "evidence": [
+            {"kind": "candidate", "id": "product", "pointer": "/children", "note": "Regular and offer are both direct DOM-leaf entries."},
+            {"kind": "capture", "id": "synthetic-chair-capture", "pointer": "/complete_for_scope", "note": "Missing source evidence prevents a whole-scope peer-coverage assessment."}
+          ]
+        }
+      }
+    },
+    "economy": {
+      "status": "assessed",
+      "score": 3,
+      "reason": "The complete supplied presentation is concise and discriminating; optional overview and inspection material do not add forced repetition under the contract.",
+      "checks": {
+        "previews_inform_choice": {
+          "status": "pass",
+          "reason": "The product overview names its branches, and specific leaf labels provide enough information to choose among the two price entries and purchase control.",
+          "evidence": [
+            {"kind": "candidate", "id": "product", "pointer": "/summary", "note": "The summary previews regular and conditional prices and purchase."},
+            {"kind": "candidate", "id": "regular", "pointer": "/label", "note": "The price-type label discriminates this entry from the offer."},
+            {"kind": "candidate", "id": "buy", "pointer": "/label", "note": "The action label distinguishes purchase from price information."}
+          ]
+        },
+        "default_reading_avoids_repetition": {
+          "status": "pass",
+          "reason": "Each price and action appears once in the direct children; the root overview and source inspection are optional. Repeating the product identity in its purchase action supplies useful context.",
+          "evidence": [
+            {"kind": "candidate", "id": "product", "pointer": "/children", "note": "Three distinct leaves contain no copied presentation subtrees."},
+            {"kind": "context", "id": "one-product", "pointer": "/presentation_contract", "note": "Overviews and source inspection are optional; candidate notes are not spoken."}
+          ]
+        }
+      }
+    },
+    "continuity": {
+      "status": "not_assessable",
+      "score": null,
+      "reason": "Only a static projection is supplied; runtime assessment is not required.",
+      "checks": {
+        "place_preserved": {
+          "status": "not_assessable",
+          "reason": "No transitions or focus-return evidence are supplied.",
+          "evidence": [
+            {"kind": "capture", "id": "synthetic-chair-capture", "pointer": "/traces", "note": "The trace list is empty."},
+            {"kind": "context", "id": "one-product", "pointer": "/runtime_assessment_required", "note": "False; runtime evidence is optional for this evaluation."}
+          ]
+        },
+        "updates_scoped": {
+          "status": "not_assessable",
+          "reason": "A static tree does not establish update scoping or invalidation of stale targets.",
+          "evidence": [
+            {"kind": "capture", "id": "synthetic-chair-capture", "pointer": "/traces", "note": "No update events or implementation evidence are supplied."}
+          ]
+        }
+      }
+    }
+  },
+  "issues": [],
+  "decision": "insufficient_evidence",
+  "next_actions": [
+    "Supply the omitted s_offer element with its original content, conditions, role, states, and relevant relationships.",
+    "Provide a capture complete for the declared one-product scope, then reassess unresolved gates, fidelity, and coverage."
+  ]
+}

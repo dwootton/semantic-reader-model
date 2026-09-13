@@ -1,0 +1,42 @@
+{
+  "run": "pilot-20260912-g",
+  "run_status": "completed",
+  "episodes": 20,
+  "strict_verdicts": {
+    "success": 17,
+    "failure": 2,
+    "unavailable": 1
+  },
+  "valid_full_annotations": 20,
+  "current_run_calls": 144,
+  "cumulative_pilot_calls": 529,
+  "separate_concurrency_probe_calls": 4,
+  "four_worker_test": {
+    "status": "passed",
+    "reason": "No infrastructure errors; complete annotations; HTTP 429 fraction at most 25 percent",
+    "measured_episodes": 6,
+    "attempts": 100,
+    "http_429": 7
+  },
+  "stages": [
+    {
+      "workers": 2,
+      "seconds": 393.6119013969983,
+      "navigation_episodes": 2,
+      "annotation_only_jobs": 0,
+      "attempts": 44,
+      "http_429": 1,
+      "navigation_episodes_per_minute": 0.30486883037351964
+    },
+    {
+      "workers": 4,
+      "seconds": 672.0035454589997,
+      "navigation_episodes": 5,
+      "annotation_only_jobs": 1,
+      "attempts": 100,
+      "http_429": 7,
+      "navigation_episodes_per_minute": 0.4464262160924917
+    }
+  ],
+  "artifact_sha256": "730b1f74eee4839361ebb0fb54351789bf43c436ab5a093fb0cb00a807770e8b"
+}
