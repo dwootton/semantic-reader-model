@@ -6,7 +6,7 @@ The goal is to turn a website's DOM or accessibility tree into a navigable seman
 
 ## Where the project stands
 
-- **Implemented:** a local hierarchy/DOM inspector, compact-input experiments, an Ollama transport, a rubric judge contract, and a browser benchmark harness with isolated workers and shared request limits.
+- **Implemented:** a local hierarchy/DOM inspector, compact-input experiments, an Ollama transport, a rubric judge contract, a browser benchmark harness, and a resumable public-page capture/compression pipeline with a paused 100-candidate pilot.
 - **Tested:** a twenty-episode pilot across two tasks, five representation conditions, and two navigator models. Seventeen official successes, two failures, and one unavailable verdict after the decision budget; all twenty episodes have complete annotations. Four concurrent workers passed the operational test.
 - **Planned:** judge calibration across a broader corpus, a filtered SFT dataset, LoRA fine-tuning of a small Qwen model, optional rubric-guided reinforcement learning, and an adaptive edge–cloud cascade. No trained adapter or validated privacy router is claimed here.
 
@@ -38,6 +38,7 @@ The raw research captures are deliberately **not included**. One separately revi
 | Directory | Purpose |
 |---|---|
 | `harness/` | Browser task runner, incremental reader, hierarchy generation, trajectory annotation, model clients, and shared concurrency budget |
+| `collection/` | Permission/robots-aware DOM and screenshot capture, audited compression, resumable queue, and a pilot paused awaiting the semantic prompt; see [collection notes](collection/README.md) |
 | `inspector/` | Local browser UI, hierarchy comparison, structural metrics, and model experiments |
 | `evals/hierarchy_judge/` | Rubric prompt, JSON schemas, mechanical validation, and synthetic adversarial fixtures |
 | `experiments/` | DOM compaction/recovery and local regional inference probes |

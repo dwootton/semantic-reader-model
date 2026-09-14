@@ -1,0 +1,9 @@
+# Optional isolated GPU-training environment; Python 3.11+ on Linux.
+# Qwen3 native loading: https://huggingface.co/Qwen/Qwen3-8B
+# Text-checkpoint conversion: https://github.com/huggingface/transformers/blob/v5.8.1/src/transformers/conversion_mapping.py
+# Releases: https://pypi.org/project/transformers/5.8.1/ and https://pypi.org/project/peft/0.19.1/
+# Install the CUDA 12.8 torch wheel explicitly on an appropriate NVIDIA driver.
+torch==2.9.1
+transformers==5.8.1
+peft==0.19.1
+accelerate==1.12.0

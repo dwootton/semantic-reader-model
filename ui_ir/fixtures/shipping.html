@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en"><head><title>Shipping example</title></head><body>
+<main><h1>Checkout</h1><p>Review the delivery address before continuing.</p>
+<div><div><fieldset><legend>Shipping address</legend>
+<label for="zip">Postal code</label><input id="zip" aria-describedby="help" aria-errormessage="error" aria-invalid="true">
+<p id="help" hidden>Use the postal code for the delivery address.</p>
+<p id="error">Postal code is required. Do not submit another payment.</p>
+</fieldset></div></div>
+<p>Pay <a href="/invoice/7">invoice</a> now.</p>
+<table><caption>Order</caption><tr><th id="price">Price</th><th>Quantity</th></tr><tr><td headers="price">$79</td><td>1</td></tr></table>
+<figure><svg><title>Delivery route</title><desc>Two stops</desc><text>Home</text><path d="M0 0L10 10"/></svg><figcaption>Delivery illustration</figcaption></figure>
+<button type="submit">Continue</button>
+</main></body></html>

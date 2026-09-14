@@ -1,0 +1,742 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Also run validateObservation/validateView for graph references, membership, scope, cardinality, and numeric cross-field invariants.",
+  "$id": "urn:semantic-reader:ui-observation:0.1",
+  "type": "object",
+  "properties": {
+    "version": {
+      "const": "ui-observation/0.1"
+    },
+    "snapshotId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "documents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "roots": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "uniqueItems": true
+          },
+          "containmentBasis": {
+            "enum": [
+              "dom",
+              "ax",
+              "uia",
+              "native",
+              "synthetic"
+            ]
+          },
+          "coverage": {
+            "type": "object",
+            "properties": {
+              "children": {
+                "enum": [
+                  "complete",
+                  "partial",
+                  "unknown"
+                ]
+              },
+              "names": {
+                "enum": [
+                  "complete",
+                  "partial",
+                  "unknown"
+                ]
+              },
+              "actions": {
+                "enum": [
+                  "complete",
+                  "partial",
+                  "unknown"
+                ]
+              },
+              "relations": {
+                "enum": [
+                  "complete",
+                  "partial",
+                  "unknown"
+                ]
+              },
+              "text": {
+                "enum": [
+                  "complete",
+                  "partial",
+                  "unknown"
+                ]
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "roots",
+          "containmentBasis"
+        ]
+      }
+    },
+    "roots": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "uniqueItems": true
+    },
+    "nodes": {
+      "type": "object",
+      "maxProperties": 100000,
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "enum": [
+              "generic",
+              "document",
+              "text",
+              "lineBreak",
+              "paragraph",
+              "heading",
+              "link",
+              "button",
+              "textField",
+              "checkbox",
+              "radio",
+              "switch",
+              "comboBox",
+              "listBox",
+              "option",
+              "group",
+              "form",
+              "list",
+              "listItem",
+              "table",
+              "row",
+              "cell",
+              "rowHeader",
+              "columnHeader",
+              "definitionList",
+              "term",
+              "definition",
+              "image",
+              "figure",
+              "caption",
+              "code",
+              "math",
+              "dialog",
+              "alert",
+              "status",
+              "navigation",
+              "main",
+              "banner",
+              "contentInfo",
+              "complementary",
+              "search",
+              "tab",
+              "tabList",
+              "tabPanel",
+              "separator",
+              "slider",
+              "spinButton",
+              "progress",
+              "tree",
+              "treeItem",
+              "grid",
+              "gridCell",
+              "menu",
+              "menuItem",
+              "frame",
+              "unknown"
+            ]
+          },
+          "children": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "uniqueItems": true
+          },
+          "text": {
+            "type": "string"
+          },
+          "name": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "basis": {
+                "enum": [
+                  "browser",
+                  "explicit"
+                ]
+              }
+            },
+            "required": [
+              "text",
+              "basis"
+            ],
+            "additionalProperties": false
+          },
+          "description": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "basis": {
+                "enum": [
+                  "browser",
+                  "explicit"
+                ]
+              }
+            },
+            "required": [
+              "text",
+              "basis"
+            ],
+            "additionalProperties": false
+          },
+          "value": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "const": "text"
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "text"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "const": "number"
+                  },
+                  "current": {
+                    "type": "number"
+                  },
+                  "min": {
+                    "type": "number"
+                  },
+                  "max": {
+                    "type": "number"
+                  },
+                  "step": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "displayText": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "states": {
+            "type": "object",
+            "properties": {
+              "disabled": {
+                "type": "boolean"
+              },
+              "readOnly": {
+                "type": "boolean"
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "focusable": {
+                "type": "boolean"
+              },
+              "selected": {
+                "type": "boolean"
+              },
+              "expanded": {
+                "type": "boolean"
+              },
+              "busy": {
+                "type": "boolean"
+              },
+              "modal": {
+                "type": "boolean"
+              },
+              "multiSelectable": {
+                "type": "boolean"
+              },
+              "checked": {
+                "enum": [
+                  true,
+                  false,
+                  "mixed"
+                ]
+              },
+              "pressed": {
+                "enum": [
+                  true,
+                  false,
+                  "mixed"
+                ]
+              },
+              "invalid": {
+                "enum": [
+                  true,
+                  false,
+                  "grammar",
+                  "spelling"
+                ]
+              },
+              "current": {
+                "enum": [
+                  true,
+                  false,
+                  "page",
+                  "step",
+                  "location",
+                  "date",
+                  "time"
+                ]
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "invoke",
+                    "focus",
+                    "setValue",
+                    "select",
+                    "toggle",
+                    "expand",
+                    "collapse",
+                    "increment",
+                    "decrement",
+                    "scroll",
+                    "scrollIntoView"
+                  ]
+                },
+                "basis": {
+                  "enum": [
+                    "reported",
+                    "native-semantics"
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "basis"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "destination": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          },
+          "labelHints": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "basis": {
+                  "enum": [
+                    "title",
+                    "placeholder",
+                    "source-label"
+                  ]
+                }
+              },
+              "required": [
+                "text",
+                "basis"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "language": {
+            "type": "string",
+            "minLength": 1
+          },
+          "direction": {
+            "enum": [
+              "ltr",
+              "rtl",
+              "auto"
+            ]
+          },
+          "structure": {
+            "type": "object",
+            "properties": {
+              "level": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "positionInSet": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "rowIndex": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "columnIndex": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "rowSpan": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "columnSpan": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "setSize": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "rowCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "columnCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "boundary": {
+                "enum": [
+                  "semantic",
+                  "branching"
+                ]
+              },
+              "preserveScope": {
+                "type": "boolean"
+              },
+              "textMode": {
+                "enum": [
+                  "normal",
+                  "verbatim"
+                ]
+              },
+              "contentKind": {
+                "enum": [
+                  "prose",
+                  "code",
+                  "math"
+                ]
+              },
+              "opaqueContent": {
+                "enum": [
+                  "frame",
+                  "shadow",
+                  "media"
+                ]
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "exposure": {
+            "type": "object",
+            "properties": {
+              "accessibilityIncluded": {
+                "type": "boolean"
+              },
+              "rendered": {
+                "type": "boolean"
+              },
+              "intersectsViewport": {
+                "type": "boolean"
+              },
+              "inert": {
+                "type": "boolean"
+              },
+              "dormant": {
+                "type": "boolean"
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "bounds": {
+            "type": "object",
+            "properties": {
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "width": {
+                "type": "number",
+                "minimum": 0
+              },
+              "height": {
+                "type": "number",
+                "minimum": 0
+              },
+              "space": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "width",
+              "height",
+              "space"
+            ],
+            "additionalProperties": false
+          },
+          "coverage": {
+            "type": "object",
+            "properties": {
+              "children": {
+                "enum": [
+                  "complete",
+                  "partial",
+                  "unknown"
+                ]
+              },
+              "names": {
+                "enum": [
+                  "complete",
+                  "partial",
+                  "unknown"
+                ]
+              },
+              "actions": {
+                "enum": [
+                  "complete",
+                  "partial",
+                  "unknown"
+                ]
+              },
+              "relations": {
+                "enum": [
+                  "complete",
+                  "partial",
+                  "unknown"
+                ]
+              },
+              "text": {
+                "enum": [
+                  "complete",
+                  "partial",
+                  "unknown"
+                ]
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "role",
+          "children"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "relations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "kind": {
+            "enum": [
+              "labelledBy",
+              "describedBy",
+              "errorMessage",
+              "details",
+              "controls",
+              "owns",
+              "activeDescendant",
+              "headers",
+              "labelFor",
+              "formOwner",
+              "choices",
+              "fragmentTarget",
+              "captionedBy",
+              "embeds"
+            ]
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "node": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    }
+                  },
+                  "required": [
+                    "node"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "unresolved": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    }
+                  },
+                  "required": [
+                    "unresolved"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "basis": {
+            "enum": [
+              "reported",
+              "native-semantics"
+            ]
+          }
+        },
+        "required": [
+          "from",
+          "kind",
+          "targets",
+          "basis"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 250000
+    },
+    "coverage": {
+      "type": "object",
+      "properties": {
+        "children": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown"
+          ]
+        },
+        "names": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown"
+          ]
+        },
+        "actions": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown"
+          ]
+        },
+        "relations": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown"
+          ]
+        },
+        "text": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown"
+          ]
+        }
+      },
+      "required": [
+        "children",
+        "names",
+        "actions",
+        "relations"
+      ],
+      "additionalProperties": false
+    },
+    "focusedNode": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    }
+  },
+  "required": [
+    "version",
+    "snapshotId",
+    "documents",
+    "roots",
+    "nodes",
+    "relations",
+    "coverage"
+  ],
+  "additionalProperties": false
+}

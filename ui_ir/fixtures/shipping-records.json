@@ -1,0 +1,20 @@
+{
+  "snapshotId": "synthetic-shipping-v0",
+  "documents": [{
+    "documentId": "d0", "profile": "saved-dom", "roots": ["0"],
+    "metadata": {"baseURL": "https://example.test/", "synthetic": true},
+    "records": [
+      {"id":"0","parent":null,"children":["1"],"kind":"element","tag":"#document","attributes":{}},
+      {"id":"1","parent":"0","children":["2","4","6","7","9"],"kind":"element","tag":"fieldset","attributes":{}},
+      {"id":"2","parent":"1","children":["3"],"kind":"element","tag":"legend","attributes":{}},
+      {"id":"3","parent":"2","children":[],"kind":"text","text":"Shipping address","attributes":{}},
+      {"id":"4","parent":"1","children":["5"],"kind":"element","tag":"label","attributes":{"for":"zip"}},
+      {"id":"5","parent":"4","children":[],"kind":"text","text":"Postal code","attributes":{}},
+      {"id":"6","parent":"1","children":[],"kind":"element","tag":"input","attributes":{"id":"zip","required":"","aria-describedby":"help"}},
+      {"id":"7","parent":"1","children":["8"],"kind":"element","tag":"p","attributes":{"id":"help"}},
+      {"id":"8","parent":"7","children":[],"kind":"text","text":"Use the postal code for the delivery address.","attributes":{}},
+      {"id":"9","parent":"1","children":["10"],"kind":"element","tag":"button","attributes":{}},
+      {"id":"10","parent":"9","children":[],"kind":"text","text":"Continue","attributes":{}}
+    ]
+  }]
+}
