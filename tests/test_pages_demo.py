@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 from scripts.build_pages_demo import (
-    DATA_FILES, PUBLIC_SOURCE, ROOT, STATIC_FILES, build, make_catalog,
+    DATA_FILES, PUBLIC_DATASETS, PUBLIC_SOURCE, ROOT, SFT_SOURCE, STATIC_FILES, build, make_catalog,
     safe_text, safe_url, sanitized_dataset, validate_image, validate_public,
 )
 
@@ -68,6 +68,10 @@ class PublicSanitizationTests(unittest.TestCase):
         for url in urls:
             self.assertEqual(safe_url(url), '')
         self.assertEqual(safe_url('#ingredients'), '#ingredients')
+        # Each public dataset accepts only its own reviewed hosts.
+        self.assertEqual(safe_url('https://ergo.chat/about', PUBLIC_DATASETS['sft109-ergo']['hosts']), 'https://ergo.chat/about')
+        self.assertEqual(safe_url('https://ergo.chat/about'), '')
+        self.assertEqual(safe_url('https://www.allrecipes.com/x', PUBLIC_DATASETS['sft109-ergo']['hosts']), '')
 
     def test_credential_shaped_strings_scrubbed_anywhere(self):
         # Construct dummy provider-shaped strings to exercise the scanner without a literal secret.
@@ -87,6 +91,10 @@ class PublicSanitizationTests(unittest.TestCase):
         data['variants']['baseline']['nodes'][0]['sourceRefs'] = ['missing']
         with self.assertRaises(AssertionError):
             validate_public(data)
+        unknown = source_fixture()
+        unknown['id'] = 'gov-uk'
+        with self.assertRaises(ValueError):
+            sanitized_dataset(unknown)
 
 
 class PagesArtifactTests(unittest.TestCase):
@@ -96,16 +104,29 @@ class PagesArtifactTests(unittest.TestCase):
         self.assertEqual(json.loads((PUBLIC_SOURCE / 'catalog.json').read_text()), make_catalog(data))
         self.assertTrue(all('Authored' in item['label'] for item in make_catalog(data)['datasets'][0]['variants']))
 
+    def test_sft_cases_are_valid_and_gold_is_gated(self):
+        for dataset_id in ('sft109-ergo', 'sft109-scribblers', 'sft109-debops'):
+            data = json.loads((SFT_SOURCE / f'{dataset_id}.json').read_text())
+            validate_public(data)
+            self.assertEqual(data['screenshot']['kind'], 'wireframe')
+            entry = make_catalog(data)['datasets'][0]
+            self.assertEqual([v.get('setting') for v in entry['variants']], [None, None, 'gold'])
+            for node in data['dom']['nodes']:
+                self.assertNotIn('compact', node)
+                self.assertNotIn('cssPath', node)
+
     def test_only_explicit_static_files_are_published(self):
         with tempfile.TemporaryDirectory() as directory:
             destination = Path(directory) / 'site'
             names = build(destination)
-            expected = set(STATIC_FILES) | {f'data/{name}' for name in DATA_FILES} | {'.nojekyll'}
+            expected = set(STATIC_FILES) | {f'data/{name}' for name in DATA_FILES} | {'data/catalog.json', '.nojekyll'}
             self.assertEqual(set(names), expected)
             actual = {str(path.relative_to(destination)) for path in destination.rglob('*') if path.is_file()}
             self.assertEqual(actual, expected)
             self.assertNotIn('compare.html', actual)
             self.assertFalse(any('gov-uk' in name for name in actual))
+            catalog = json.loads((destination / 'data/catalog.json').read_text())
+            self.assertEqual([entry['id'] for entry in catalog['datasets']], list(PUBLIC_DATASETS))
 
     def test_nonempty_destination_never_overwritten(self):
         with tempfile.TemporaryDirectory() as directory:

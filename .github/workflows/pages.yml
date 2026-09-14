@@ -1,4 +1,4 @@
-name: Publish Banana Bread demo
+name: Publish inspector demo
 
 on:
   push:
@@ -9,6 +9,7 @@ on:
       - 'inspector/*.mjs'
       - 'inspector/build_data.py'
       - 'examples/banana-bread/**'
+      - 'examples/sft109-cases/**'
       - 'scripts/build_pages_demo.py'
       - 'scripts/check_staged_files.py'
       - 'tests/test_pages_demo.py'

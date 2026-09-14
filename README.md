@@ -16,9 +16,9 @@ The rubric is provisional. The pilot found both useful navigation patterns and i
 
 ## Published demo
 
-[Open the Banana Bread inspector](https://www.dylanwootton.com/semantic-reader-model/). It opens the reviewed Allrecipes example and runs entirely as a static page. The original and revised hierarchies are authored research examples, not fine-tuned-model outputs.
+[Open the inspector demo](https://www.dylanwootton.com/semantic-reader-model/). It opens the reviewed Allrecipes example and runs entirely as a static page; its original and revised hierarchies are authored research examples, not fine-tuned-model outputs. The Example menu also offers the three [SFT-109 held-out test cases](examples/sft109-cases/README.md), where the fine-tuned adapter's actual output sits beside the silver teacher outline and an authored gold candidate.
 
-The Pages workflow publishes only an explicit ten-file artifact; it does not publish the repository, model runner, local credentials, or other captures. See [the example provenance](examples/banana-bread/README.md).
+The Pages workflow publishes only the explicit reviewed artifact (six static inspector files, four sanitized datasets with their images, and a generated catalog); it does not publish the repository, model runner, local credentials, or other captures. See [the banana bread provenance](examples/banana-bread/README.md) and [the SFT-109 case provenance](examples/sft109-cases/README.md).
 
 ## Try the local inspector
 

@@ -14,6 +14,9 @@ LOCAL_FILES = {"AGENTS.md", "infra/README.md", ".lab-config.json"}
 PUBLIC_EXAMPLE_FILES = {
     "examples/banana-bread/allrecipes.json", "examples/banana-bread/allrecipes.jpg",
     "examples/banana-bread/catalog.json", "examples/banana-bread/README.md",
+    # SFT-109 held-out test cases, sanitized by scripts/build_pages_demo.py --prepare; published 2026-09-14.
+    "examples/sft109-cases/README.md",
+    *(f"examples/sft109-cases/sft109-{name}.{ext}" for name in ("ergo", "scribblers", "debops") for ext in ("json", "jpg")),
 }
 PATTERNS = {
     "private key": rb"-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----",

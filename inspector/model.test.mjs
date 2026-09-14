@@ -70,7 +70,8 @@ test('all exported variants resolve every semantic leaf in both mapping directio
       }
     }
   }
-  assert.equal(catalog.datasets.length, 14);
-  assert.equal(variants, 27);
+  assert.ok(catalog.datasets.length >= 14, 'Original 14-site corpus plus any imported datasets');
+  assert.equal(variants, catalog.datasets.reduce((total, entry) => total + entry.variants.length, 0));
+  assert.ok(variants >= 27, 'Original corpus variants remain available alongside imported trees');
   assert.ok(references > 7000);
 });

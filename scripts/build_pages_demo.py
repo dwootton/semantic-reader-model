@@ -1,4 +1,10 @@
-"""Build a static Pages artifact from the reviewed banana bread example only."""
+"""Build a static Pages artifact from the reviewed public datasets only.
+
+Public datasets are listed explicitly in PUBLIC_DATASETS: the banana bread example and the three
+SFT-109 held-out test cases (published on 2026-09-14 at the maintainer's decision). Each dataset is
+sanitized once into examples/ and validated again at build time; nothing else in the repository is
+published.
+"""
 
 import argparse
 import ipaddress
@@ -16,8 +22,43 @@ from inspector.build_data import validate  # noqa: E402 - support direct script 
 from scripts.check_staged_files import scan_blob  # noqa: E402
 
 STATIC_FILES = ('index.html', 'app.mjs', 'style.css', 'model.mjs', 'metrics.mjs', 'narration.mjs')
-DATA_FILES = ('allrecipes.json', 'catalog.json', 'allrecipes.jpg')
 PUBLIC_SOURCE = ROOT / 'examples/banana-bread'
+SFT_SOURCE = ROOT / 'examples/sft109-cases'
+ALLRECIPES_HOSTS = frozenset({'allrecipes.com', 'www.allrecipes.com'})
+SFT_LIMITATIONS = (
+    'Sanitized published view; removed fields differ from the local capture.',
+    'Held-out SFT-109 test page: the model saw only compact HTML, never the full DOM or a screenshot.',
+    'No pixel screenshot exists for this media-suppressed capture; the screenshot pane is a wireframe drawn from captured element geometry and saved DOM text.',
+    'Silver reference outline is an automated teacher label, not human gold; the gold standard was authored from the captured DOM on 2026-09-14 and awaits human review.',
+)
+SFT_VARIANTS = {'sft-109': 'Qwen3.5-9B SFT-109 output', 'silver-reference': 'Silver reference (Gemini teacher)',
+                'gold': 'Gold standard (authored, review pending)'}
+WIREFRAME = {'kind': 'wireframe', 'note': 'Wireframe drawn from captured element geometry and saved DOM text; the media-suppressed capture recorded no pixel screenshot.'}
+PUBLIC_DATASETS = {
+    'allrecipes': {
+        'label': 'Banana Bread', 'url': 'https://www.allrecipes.com/recipe/20144/banana-banana-bread/',
+        'hosts': ALLRECIPES_HOSTS, 'source': PUBLIC_SOURCE,
+        'variants': {'baseline': 'Authored original', 'revised': 'Authored revised'}, 'settings': {},
+        'screenshot': {},
+        'limitations': ('Sanitized published view; removed fields differ from the local capture.',
+                        'Authored original and revised hierarchies; these are not model-run results.',
+                        'Screenshot and DOM were captured sequentially; only the first viewport is shown.')},
+    'sft109-ergo': {
+        'label': 'Ergo IRC landing page · SFT-109 test case', 'url': 'https://ergo.chat/',
+        'hosts': frozenset({'ergo.chat'}), 'source': SFT_SOURCE, 'variants': SFT_VARIANTS,
+        'settings': {'gold': 'gold'}, 'screenshot': WIREFRAME, 'limitations': SFT_LIMITATIONS},
+    'sft109-scribblers': {
+        'label': 'Scribble.rs lobby configuration · SFT-109 test case', 'url': 'https://scribblers.fly.dev/',
+        'hosts': frozenset({'scribblers.fly.dev', 'github.com'}), 'source': SFT_SOURCE, 'variants': SFT_VARIANTS,
+        'settings': {'gold': 'gold'}, 'screenshot': WIREFRAME, 'limitations': SFT_LIMITATIONS},
+    'sft109-debops': {
+        'label': 'DebOps service ports documentation · SFT-109 test case',
+        'url': 'https://docs.debops.org/en/stable-3.3/admin-guide/service-ports.html',
+        'hosts': frozenset({'docs.debops.org', 'github.com', 'www.sphinx-doc.org', 'readthedocs.org'}),
+        'source': SFT_SOURCE, 'variants': SFT_VARIANTS, 'settings': {'gold': 'gold'},
+        'screenshot': WIREFRAME, 'limitations': SFT_LIMITATIONS},
+}
+DATA_FILES = tuple(f'{name}.{ext}' for name in PUBLIC_DATASETS for ext in ('json', 'jpg'))
 SAFE_ATTRIBUTES = frozenset({
     'id', 'role', 'alt', 'title', 'type', 'tabindex', 'for', 'disabled',
     'aria-label', 'aria-labelledby', 'aria-describedby', 'aria-controls',
@@ -25,6 +66,8 @@ SAFE_ATTRIBUTES = frozenset({
     'aria-orientation', 'aria-level', 'aria-posinset', 'aria-setsize',
     'aria-haspopup', 'aria-required', 'aria-readonly', 'href',
 })
+HIERARCHY_FIELDS = {'id', 'kind', 'label', 'summary', 'origin', 'children', 'sourceRefs',
+                    'reading_text', 'display_role', 'label_origin'}
 INERT_TAGS = {'script', 'style', 'noscript', 'template', 'iframe', 'object', 'embed'}
 FORM_TAGS = {'input', 'textarea', 'select', 'option'}
 URL_RE = re.compile(r'(?:https?://|file://|(?:localhost|127\.0\.0\.1)(?::\d+)?/)[^\s<>\"\']+', re.I)
@@ -35,8 +78,14 @@ CREDENTIAL_ASSIGNMENT = re.compile(
 EMAIL = re.compile(r'\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b', re.I)
 
 
-def safe_url(value):
-    """Only public source-site HTTPS paths and document fragments survive."""
+def spec_for(dataset_id):
+    if dataset_id not in PUBLIC_DATASETS:
+        raise ValueError('Dataset is not on the reviewed public list')
+    return PUBLIC_DATASETS[dataset_id]
+
+
+def safe_url(value, hosts=ALLRECIPES_HOSTS):
+    """Only the dataset's public source-site HTTPS paths and document fragments survive."""
     if not isinstance(value, str):
         return ''
     if re.fullmatch(r'#[A-Za-z0-9_-]+', value):
@@ -51,7 +100,7 @@ def safe_url(value):
             return ''
         except ValueError:
             pass
-        if parts.scheme != 'https' or host not in {'allrecipes.com', 'www.allrecipes.com'}:
+        if parts.scheme != 'https' or host not in hosts:
             return ''
         if parts.query or re.search(r'(?i)(token|session|secret|password|api[_-]?key)', parts.path):
             return ''
@@ -60,19 +109,21 @@ def safe_url(value):
         return ''
 
 
-def safe_text(value):
+def safe_text(value, hosts=ALLRECIPES_HOSTS):
     if not isinstance(value, str):
         return ''
     if scan_blob('public-text.txt', value.encode()) or CREDENTIAL_ASSIGNMENT.search(value):
         return '[omitted]'
     value = LOCAL_PATH.sub('[omitted]', value)
     value = EMAIL.sub('[omitted]', value)
-    return URL_RE.sub(lambda match: safe_url(match[0]) or '[omitted]', value)
+    return URL_RE.sub(lambda match: safe_url(match[0], hosts) or '[omitted]', value)
 
 
 def sanitized_dataset(source):
     """Preserve graph IDs, but publish only explicit display fields and safe text."""
     validate(source)
+    spec = spec_for(source['id'])
+    hosts = spec['hosts']
     nodes = []
     form_ids = set()
     for raw in source['dom']['nodes']:
@@ -84,13 +135,13 @@ def sanitized_dataset(source):
         for key, value in raw.get('attributes', {}).items():
             if key not in SAFE_ATTRIBUTES or not isinstance(value, (str, bool, int, float)):
                 continue
-            cleaned = safe_url(value) if key == 'href' else safe_text(str(value))
+            cleaned = safe_url(value, hosts) if key == 'href' else safe_text(str(value), hosts)
             if cleaned and cleaned != '[omitted]':
                 attrs[key] = cleaned
         node = {
             'id': raw['id'], 'parent': raw['parent'], 'children': list(raw['children']),
-            'tag': tag, 'text': '' if blocked else safe_text(raw.get('text', '')),
-            'ownText': '' if blocked else safe_text(raw.get('ownText', '')),
+            'tag': tag, 'text': '' if blocked else safe_text(raw.get('text', ''), hosts),
+            'ownText': '' if blocked else safe_text(raw.get('ownText', ''), hosts),
             'attributes': attrs, 'hidden': bool(raw.get('hidden')),
         }
         rect = raw.get('rect')
@@ -100,31 +151,28 @@ def sanitized_dataset(source):
                             and isinstance(value, (int, float)) and not isinstance(value, bool)}
         nodes.append(node)
     variants = {}
-    for name in ('baseline', 'revised'):
+    for name in spec['variants']:
         tree = source['variants'][name]
         result = []
         for raw in tree['nodes']:
-            node = {key: safe_text(raw.get(key, ''))
+            node = {key: safe_text(raw.get(key, ''), hosts)
                     for key in ('id', 'kind', 'label', 'summary', 'origin')}
             node['children'] = list(raw['children'])
             node['sourceRefs'] = list(raw['sourceRefs'])
             for key in ('reading_text', 'display_role', 'label_origin'):
                 if key in raw:
                     node[key] = ('' if key == 'reading_text' and set(raw['sourceRefs']) & form_ids
-                                 else safe_text(raw[key]))
+                                 else safe_text(raw[key], hosts))
             result.append(node)
         variants[name] = {'rootId': tree['rootId'], 'nodes': result}
     shot = source['screenshot']
     dataset = {
-        'id': 'allrecipes', 'label': 'Banana Bread',
-        'url': 'https://www.allrecipes.com/recipe/20144/banana-banana-bread/',
+        'id': source['id'], 'label': spec['label'], 'url': spec['url'],
         'dom': {'roots': list(source['dom']['roots']), 'nodes': nodes},
         'variants': variants,
-        'screenshot': {'url': 'data/allrecipes.jpg', **{key: shot[key] for key in
-                       ('width', 'height', 'scrollX', 'scrollY')}},
-        'limitations': ['Sanitized published view; removed fields differ from the local capture.',
-                        'Authored original and revised hierarchies; these are not model-run results.',
-                        'Screenshot and DOM were captured sequentially; only the first viewport is shown.'],
+        'screenshot': {'url': f"data/{source['id']}.jpg", **{key: shot[key] for key in
+                       ('width', 'height', 'scrollX', 'scrollY')}, **spec['screenshot']},
+        'limitations': list(spec['limitations']),
     }
     validate_public(dataset)
     return dataset
@@ -134,20 +182,26 @@ def validate_public(dataset):
     validate(dataset)
     if set(dataset) != {'id', 'label', 'url', 'dom', 'variants', 'screenshot', 'limitations'}:
         raise ValueError('Unexpected published dataset fields')
+    spec = spec_for(dataset['id'])
+    hosts = spec['hosts']
+    if dataset['label'] != spec['label'] or dataset['url'] != spec['url'] or list(dataset['limitations']) != list(spec['limitations']):
+        raise ValueError('Published dataset metadata differs from the reviewed specification')
     if set(dataset['dom']) != {'roots', 'nodes'}:
         raise ValueError('Unexpected DOM container fields')
+    if set(dataset['variants']) != set(spec['variants']):
+        raise ValueError('Unexpected public dataset or variants')
     for tree in dataset['variants'].values():
         if set(tree) != {'rootId', 'nodes'}:
             raise ValueError('Unexpected hierarchy container fields')
         for node in tree['nodes']:
-            if set(node) - {'id', 'kind', 'label', 'summary', 'origin', 'children',
-                            'sourceRefs', 'reading_text', 'display_role', 'label_origin'}:
+            if set(node) - HIERARCHY_FIELDS:
                 raise ValueError('Unexpected hierarchy field')
     shot = dataset['screenshot']
-    if set(shot) != {'url', 'width', 'height', 'scrollX', 'scrollY'} or shot['url'] != 'data/allrecipes.jpg':
+    expected_shot = {'url', 'width', 'height', 'scrollX', 'scrollY', *spec['screenshot']}
+    if set(shot) != expected_shot or shot['url'] != f"data/{dataset['id']}.jpg":
         raise ValueError('Unexpected screenshot metadata')
-    if dataset['id'] != 'allrecipes' or set(dataset['variants']) != {'baseline', 'revised'}:
-        raise ValueError('Unexpected public dataset or variants')
+    if any(shot[key] != value for key, value in spec['screenshot'].items()):
+        raise ValueError('Screenshot description differs from the reviewed specification')
     for node in dataset['dom']['nodes']:
         if set(node) - {'id', 'parent', 'children', 'tag', 'text', 'ownText', 'attributes', 'hidden', 'rect'}:
             raise ValueError('Unexpected DOM field')
@@ -162,11 +216,11 @@ def validate_public(dataset):
         elif isinstance(value, list):
             for child in value:
                 walk(child)
-        elif isinstance(value, str) and safe_text(value) != value:
+        elif isinstance(value, str) and safe_text(value, hosts) != value:
             raise ValueError('Unsafe string in published dataset')
     walk(dataset)
     for node in dataset['dom']['nodes']:
-        if 'href' in node['attributes'] and safe_url(node['attributes']['href']) != node['attributes']['href']:
+        if 'href' in node['attributes'] and safe_url(node['attributes']['href'], hosts) != node['attributes']['href']:
             raise ValueError('Unsafe URL attribute')
     payload = json.dumps(dataset, ensure_ascii=False, allow_nan=False).encode()
     if scan_blob('public-dataset.json', payload):
@@ -193,20 +247,33 @@ def validate_image(data):
     raise ValueError('Missing JPEG image data')
 
 
-def build(destination, source=PUBLIC_SOURCE, inspector=ROOT / 'inspector'):
+def make_catalog(*datasets):
+    entries = []
+    for dataset in datasets:
+        spec = spec_for(dataset['id'])
+        entries.append({'id': dataset['id'], 'label': spec['label'], 'url': dataset['url'],
+                        'variants': [{'id': name, 'label': label,
+                                      **({'setting': spec['settings'][name]} if name in spec['settings'] else {})}
+                                     for name, label in spec['variants'].items()],
+                        'hasScreenshot': True, 'domCount': len(dataset['dom']['nodes'])})
+    return {'datasets': entries}
+
+
+def build(destination, sources=None, inspector=ROOT / 'inspector'):
     destination = Path(destination)
-    source = Path(source)
     if destination.exists() and any(destination.iterdir()):
         raise FileExistsError('Output directory must be empty')
-    dataset = json.loads((source / 'allrecipes.json').read_text())
-    validate_public(dataset)
-    catalog = json.loads((source / 'catalog.json').read_text())
-    expected_catalog = make_catalog(dataset)
-    if catalog != expected_catalog:
-        raise ValueError('Public catalog does not match reviewed dataset')
-    validate_image((source / 'allrecipes.jpg').read_bytes())
-    files = {name: Path(inspector) / name for name in STATIC_FILES}
-    files.update({f'data/{name}': source / name for name in DATA_FILES})
+    datasets, files = [], {name: Path(inspector) / name for name in STATIC_FILES}
+    for dataset_id, spec in PUBLIC_DATASETS.items():
+        source = Path((sources or {}).get(dataset_id, spec['source']))
+        dataset = json.loads((source / f'{dataset_id}.json').read_text())
+        if dataset['id'] != dataset_id:
+            raise ValueError('Reviewed dataset identity mismatch')
+        validate_public(dataset)
+        validate_image((source / f'{dataset_id}.jpg').read_bytes())
+        datasets.append(dataset)
+        files[f'data/{dataset_id}.json'] = source / f'{dataset_id}.json'
+        files[f'data/{dataset_id}.jpg'] = source / f'{dataset_id}.jpg'
     for name, path in files.items():
         if path.is_symlink() or not path.is_file():
             raise ValueError('Only regular source files may be published')
@@ -216,21 +283,39 @@ def build(destination, source=PUBLIC_SOURCE, inspector=ROOT / 'inspector'):
     (destination / 'data').mkdir()
     for name, path in files.items():
         shutil.copyfile(path, destination / name)
+    catalog = json.dumps(make_catalog(*datasets), ensure_ascii=False, indent=2)
+    if scan_blob('data/catalog.json', catalog.encode()):
+        raise ValueError('Publication scan failed for the catalog')
+    (destination / 'data/catalog.json').write_text(catalog)
     (destination / '.nojekyll').write_text('')
-    return sorted([*files, '.nojekyll'])
+    return sorted([*files, 'data/catalog.json', '.nojekyll'])
 
 
-def make_catalog(dataset):
-    return {'datasets': [{'id': 'allrecipes', 'label': 'Banana Bread', 'url': dataset['url'],
-                          'variants': [{'id': 'baseline', 'label': 'Authored original'},
-                                       {'id': 'revised', 'label': 'Authored revised'}],
-                          'hasScreenshot': True, 'domCount': len(dataset['dom']['nodes'])}]}
+def prepare(dataset_ids, data_root=ROOT / 'inspector/data'):
+    """Sanitize local inspector exports into their reviewed public source directory."""
+    written = []
+    for dataset_id in dataset_ids:
+        spec = spec_for(dataset_id)
+        source = json.loads((Path(data_root) / f'{dataset_id}.json').read_text())
+        dataset = sanitized_dataset(source)
+        image = (Path(data_root) / f'{dataset_id}.jpg').read_bytes()
+        validate_image(image)
+        spec['source'].mkdir(parents=True, exist_ok=True)
+        (spec['source'] / f'{dataset_id}.json').write_text(json.dumps(dataset, ensure_ascii=False, separators=(',', ':')))
+        (spec['source'] / f'{dataset_id}.jpg').write_bytes(image)
+        written.append(dataset_id)
+    return written
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--destination', type=Path, default=ROOT / '.pages-dist')
+    parser.add_argument('--prepare', nargs='+', metavar='DATASET_ID',
+                        help='Sanitize these inspector/data exports into examples/ instead of building')
     args = parser.parse_args()
+    if args.prepare:
+        print('Prepared ' + ', '.join(prepare(args.prepare)))
+        return
     files = build(args.destination)
     print(f'Built {len(files)} reviewed static files.')
 

@@ -3,7 +3,9 @@ import os
 import unittest
 from pathlib import Path
 
-from build_data import dom, validate, variant
+import tempfile
+
+from build_data import dom, import_datasets, validate, variant
 
 
 class DataExportTests(unittest.TestCase):
@@ -47,7 +49,7 @@ class DataExportTests(unittest.TestCase):
     def test_every_export_and_screenshot(self):
         directory = Path(__file__).parent / "data"
         catalog = json.loads((directory / "catalog.json").read_text())["datasets"]
-        self.assertEqual(len(catalog), 14)
+        self.assertGreaterEqual(len(catalog), 14)
         for entry in catalog:
             dataset = json.loads((directory / f"{entry['id']}.json").read_text())
             with self.subTest(dataset=entry["id"]):
@@ -60,7 +62,50 @@ class DataExportTests(unittest.TestCase):
                     self.assertEqual(len(dataset["dom"]["roots"]), 2)
                     self.assertIsNone(dataset["screenshot"])
                 if entry["id"] == "nyt-homepage":
-                    self.assertEqual(list(dataset["variants"]), ["revised"])
+                    self.assertEqual(list(dataset["variants"]), ["revised", "condensed"])
+                if entry["id"].startswith("sft109-"):
+                    self.assertEqual(list(dataset["variants"]), ["sft-109", "silver-reference", "gold"])
+                    self.assertEqual([v.get("setting") for v in entry["variants"]], [None, None, "gold"])
+                    self.assertEqual(dataset["screenshot"]["kind"], "wireframe")
+                    for tree in dataset["variants"].values():
+                        self.assertFalse(tree["provenance"].get("unmapped_refs"))
+                    self.assertEqual(dataset["variants"]["gold"]["provenance"]["kind"], "authored-gold-candidate")
+
+    def import_fixture(self):
+        return {"id": "demo", "label": "Demo", "url": "", "screenshot": None, "limitations": [],
+                "dom": {"roots": ["a"], "nodes": [
+                    {"id": "a", "parent": None, "children": ["b"], "tag": "body"},
+                    {"id": "b", "parent": "a", "children": [], "tag": "p"}]},
+                "variants": {"sft-109": {"rootId": "g", "nodes": [
+                    {"id": "g", "kind": "group", "label": "Page", "children": ["u"], "sourceRefs": ["a"]},
+                    {"id": "u", "kind": "dom", "label": "Text", "children": [], "sourceRefs": ["b"]}]}}}
+
+    def test_import_datasets_adds_catalog_entry_and_rejects_bad_trees(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output, source = Path(tmp) / "out", Path(tmp) / "src"
+            output.mkdir()
+            source.mkdir()
+            (output / "catalog.json").write_text(json.dumps({"datasets": [{"id": "other", "variants": []}]}))
+            (source / "demo.json").write_text(json.dumps(self.import_fixture()))
+            import_datasets(output, source)
+            catalog = json.loads((output / "catalog.json").read_text())["datasets"]
+            self.assertEqual([e["id"] for e in catalog], ["other", "demo"])
+            self.assertEqual(catalog[1]["variants"], [{"id": "sft-109", "label": "Qwen3.5-9B SFT-109 output"}])
+            gated = self.import_fixture()
+            gated["variantSettings"] = {"sft-109": "gold"}
+            (source / "demo.json").write_text(json.dumps(gated))
+            import_datasets(output, source)
+            catalog = json.loads((output / "catalog.json").read_text())["datasets"]
+            self.assertEqual(catalog[1]["variants"][0]["setting"], "gold")
+            self.assertFalse(catalog[1]["hasScreenshot"])
+            self.assertEqual(catalog[1]["domCount"], 2)
+            broken = self.import_fixture()
+            broken["variants"]["sft-109"]["nodes"][1]["sourceRefs"] = ["missing"]
+            (source / "demo.json").write_text(json.dumps(broken))
+            with self.assertRaises(ValueError):
+                import_datasets(output, source)
+            # A rejected import must not disturb the earlier export.
+            self.assertEqual(json.loads((output / "demo.json").read_text())["variants"]["sft-109"]["nodes"][1]["sourceRefs"], ["b"])
 
 
 if __name__ == "__main__":

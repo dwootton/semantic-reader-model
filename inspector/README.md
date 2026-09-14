@@ -14,7 +14,10 @@ Visit [the inspector](http://127.0.0.1:8765/). It binds only to loopback and ser
 
 ## Explore
 
-- Choose a capture and its original or revised hierarchy. NYT has one hierarchy.
+- Choose a capture and its original, revised, or condensed hierarchy (`?variant=condensed` in the URL selects it on load and the choice sticks while switching captures). NYT has revised and condensed only. Condensed hierarchies are the 2026-09-13 re-authoring described in [docs/research/condensed-hierarchies.md](../docs/research/condensed-hierarchies.md); rebuild them with `python3 scripts/condensed_hierarchies/build_all.py`.
+- Local labeler examples also appear in the **Hierarchy** menu: **Labeler v1** and **Labeler v2** for Hacker News, MDN, and Smithsonian, and **Labeler v2** for IKEA. These saved model outputs use the same original DOM IDs and registered screenshots as the authored variants, so selection, reverse linking, and screenshot highlights work in the regular interface. [Open Hacker News with Labeler v2](http://127.0.0.1:8765/?site=hacker-news&variant=labeler-v2).
+- Three held-out **SFT-109 test cases** (Ergo IRC landing page, Scribble.rs lobby configuration, DebOps service ports) show the [Qwen3.5-9B SFT-109 adapter](https://huggingface.co/Dwootton/semantic-reader-qwen3.5-9b-sft-109) output beside the silver teacher outline it was trained to imitate. [Open Scribble.rs with the model output](http://127.0.0.1:8765/?site=sft109-scribblers&variant=sft-109). The right pane is the original captured DOM; each outline reference was resolved through the recorded alias packet, compact source map, and capture geometry, so selection, reverse linking, and screenshot highlights work. These captures were media-suppressed, so the screenshot tab shows a wireframe drawn from captured element geometry and saved DOM text rather than pixels. Rebuild with `python3 scripts/build_sft109_qualitative.py` then `python3 inspector/build_data.py --import-datasets runs/sft-109-qualitative/datasets`; the case bundles under `runs/sft-109-qualitative/` combine the HF result files, the training workstation's readiness pairs, and the archived collection captures, and stay out of git.
+- **Gold standard: hidden/shown** in the header controls whether authored gold-standard hierarchies appear in the Hierarchy menu, so you can review model output blind first. The choice is remembered in this browser; `?gold=1` or `?gold=0` in the URL overrides it for that visit ([Scribble.rs with gold shown](http://127.0.0.1:8765/?site=sft109-scribblers&variant=gold&gold=1)). The three SFT-109 cases carry a gold candidate authored on 2026-09-14 from the full captured DOM following [the labeler rubric](../docs/research/semantic-outline-labeler-rubric.md); it is AI-authored and awaits human review, and its source is `runs/sft-109-qualitative/gold/author_gold.py`. Datasets mark such variants with a `variantSettings` entry; the catalog carries it as `setting` on the variant.
 - Switch the left pane between **Hierarchy** and **Raw DOM**. Each view keeps its own expansion state. A pinned hierarchy selection highlights all linked source nodes when switching to Raw DOM; selecting a raw node maps back to the hierarchy when switching back. Both raw-DOM panes match by the same original element ID, including nodes without semantic annotations.
 - Hover over a node for a temporary cross-highlight. Click or press Enter/Space to pin the selection.
 - Selecting a hierarchy node reveals and highlights its source DOM references. Turn off **Include child references** to restrict selection to the node's explicitly attached references.
@@ -38,6 +41,14 @@ python3 inspector/build_data.py
 
 The exporter adapts the two original examples and twelve-site vision study into one schema. It preserves IDs, multiple source references, available text, and frame roots. Script/style text is excluded. Screenshots are copied from the original registered viewport captures, with their actual JPEG extension. Static EWH and NYT captures have no registered screenshot or direct-text-node field.
 
+When `runs/labeler-test/v1` or `v2` contains `SITE.hierarchy.json`, the exporter also imports those saved trees. To add or refresh them in an existing local export without rebuilding the captures:
+
+```sh
+python3 inspector/build_data.py --labeler-only
+```
+
+Use `--labeler-root PATH` for another directory with the same `v1`/`v2` layout, and `--output PATH` for another inspector data directory. `--import-datasets DIR` adds prebuilt dataset JSON/JPEG pairs (validated first) and replaces catalog entries with the same id. Imports validate capture identity, tree structure, and every source reference before writing. Existing variants, DOM, screenshots, and catalog metadata are retained; repeated imports update the same menu choices. Input trees must already use the original capture IDs; compact/parser references need an explicit mapping first. Imported variants retain a source file hash and scope. The saved runs and exported data remain excluded from git and from the separately reviewed public demo.
+
 ## Checks
 
 ```sh
@@ -57,4 +68,4 @@ This is a capture inspector, not a live website proxy. Screenshots cover one sav
 
 ## Static Pages build
 
-The published landing page opens the reviewed Banana Bread example by default. Build into an empty directory with `python3 scripts/build_pages_demo.py --destination /tmp/semantic-pages`. The build includes only the static inspector assets and the reviewed example; it has no model runner or comparison API. The source export is sanitized, so its metrics describe that published view.
+The published landing page opens the reviewed Banana Bread example by default and also lists the three SFT-109 test cases. Build into an empty directory with `python3 scripts/build_pages_demo.py --destination /tmp/semantic-pages`. The build includes only the static inspector assets and the reviewed datasets in `examples/`; it has no model runner or comparison API. Refresh a public dataset from the local export with `python3 scripts/build_pages_demo.py --prepare sft109-ergo sft109-scribblers sft109-debops`. Source exports are sanitized, so their metrics describe the published view.

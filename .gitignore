@@ -23,6 +23,7 @@
 /examples/*
 !/examples/demo/
 !/examples/banana-bread/
+!/examples/sft109-cases/
 /.pages-dist/
 /experiments/dom-downsampling/output/
 /experiments/dom-downsampling/report.json

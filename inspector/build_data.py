@@ -1,10 +1,18 @@
 """Export existing local captures; never executes or fetches source pages."""
+import argparse
+import hashlib
 import json
 import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = Path(__file__).resolve().parent / "data"
+LABELER_ROOT = ROOT / "runs/labeler-test"
+VARIANT_LABELS = {"baseline": "Original hierarchy", "revised": "Revised hierarchy",
+                  "condensed": "Condensed hierarchy", "labeler-v1": "Labeler v1",
+                  "labeler-v2": "Labeler v2", "sft-109": "Qwen3.5-9B SFT-109 output",
+                  "silver-reference": "Silver reference (Gemini teacher)",
+                  "gold": "Gold standard (authored, review pending)"}
 
 
 def read(path):
@@ -92,7 +100,103 @@ def validate(dataset):
     return refs
 
 
-def build(output=OUT):
+def add_labeler_variants(dataset, labeler_root=LABELER_ROOT):
+    """Import saved trees whose references already use this capture's IDs.
+
+    Never interpret compact/parser IDs as capture IDs or silently drop references.
+    Validate every candidate before changing the dataset.
+    """
+    imported = {}
+    for version in ("v1", "v2"):
+        path = labeler_root / version / f"{dataset['id']}.hierarchy.json"
+        if not path.exists():
+            continue
+        source = read(path)
+        if source.get("site_id") != dataset["id"]:
+            raise ValueError(f"{path.name}: labeler tree belongs to another capture")
+        tree = variant(source)
+        if any(n["kind"] == "dom" and not n["sourceRefs"] for n in tree["nodes"]):
+            raise ValueError(f"{path.name}: labeler reading unit has no source references")
+        name = f"labeler-{version}"
+        try:
+            validate({**dataset, "variants": {name: tree}})
+        except AssertionError as error:
+            raise ValueError(f"{path.name}: {error}") from error
+        tree["provenance"] = {"kind": "saved-labeler-output", "version": version,
+                              "file": f"{version}/{path.name}",
+                              "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                              "method": source.get("method", ""),
+                              "scope": source.get("scope", "")}
+        imported[name] = tree
+    dataset["variants"].update(imported)
+    return list(imported)
+
+
+def import_labeler_examples(output=OUT, labeler_root=LABELER_ROOT):
+    """Add local labeler variants to an existing export, retaining its catalog."""
+    catalog = read(output / "catalog.json")
+    pending = []
+    count = 0
+    for entry in catalog["datasets"]:
+        dataset = read(output / f"{entry['id']}.json")
+        if dataset["id"] != entry["id"]:
+            raise ValueError("Catalog and capture identity differ")
+        names = add_labeler_variants(dataset, labeler_root)
+        if not names:
+            continue
+        validate(dataset)
+        entry["variants"] = [v for v in entry["variants"] if v["id"] not in names]
+        entry["variants"].extend({"id": name, "label": VARIANT_LABELS[name]} for name in names)
+        pending.append(dataset)
+        count += len(names)
+    # A bad tree must not leave earlier captures or the catalog partly imported.
+    for dataset in pending:
+        (output / f"{dataset['id']}.json").write_text(json.dumps(dataset, ensure_ascii=False, separators=(",", ":")))
+    (output / "catalog.json").write_text(json.dumps(catalog, ensure_ascii=False, indent=2))
+    print(f"Imported {count} labeler trees across {len(pending)} captures.")
+    return pending
+
+
+def import_datasets(output, source):
+    """Add prebuilt datasets (for example scripts/build_sft109_qualitative.py) to an existing export.
+
+    Every dataset is validated before anything is written; a screenshot must be a JPEG beside its JSON.
+    Existing catalog entries with the same id are replaced; other captures are untouched.
+    """
+    catalog = read(output / "catalog.json")
+    pending = []
+    for path in sorted(Path(source).glob("*.json")):
+        dataset = read(path)
+        if dataset.get("id") != path.stem or not dataset.get("variants"):
+            raise ValueError(f"{path.name}: dataset id must match the file name and include variants")
+        try:
+            validate(dataset)
+        except AssertionError as error:
+            raise ValueError(f"{path.name}: {error}") from error
+        image = None
+        if dataset.get("screenshot"):
+            image = path.with_suffix(".jpg")
+            if dataset["screenshot"]["url"] != f"data/{dataset['id']}.jpg" or image.read_bytes()[:3] != b"\xff\xd8\xff":
+                raise ValueError(f"{path.name}: screenshot must be data/{dataset['id']}.jpg beside the dataset")
+        labels, settings = dataset.get("variantLabels", {}), dataset.get("variantSettings", {})
+        # A variant with a setting key stays out of the Hierarchy menu until that inspector setting is on.
+        entry = {"id": dataset["id"], "label": dataset["label"], "url": dataset.get("url", ""),
+                 "variants": [{"id": v, "label": labels.get(v, VARIANT_LABELS.get(v, v.title() + " hierarchy")),
+                               **({"setting": settings[v]} if v in settings else {})}
+                              for v in dataset["variants"]],
+                 "hasScreenshot": dataset.get("screenshot") is not None, "domCount": len(dataset["dom"]["nodes"])}
+        pending.append((dataset, image, entry))
+    for dataset, image, entry in pending:
+        if image is not None:
+            shutil.copyfile(image, output / image.name)
+        (output / f"{dataset['id']}.json").write_text(json.dumps(dataset, ensure_ascii=False, separators=(",", ":")))
+        catalog["datasets"] = [e for e in catalog["datasets"] if e["id"] != entry["id"]] + [entry]
+    (output / "catalog.json").write_text(json.dumps(catalog, ensure_ascii=False, indent=2))
+    print(f"Imported {len(pending)} datasets into {output}.")
+    return [d for d, _, _ in pending]
+
+
+def build(output=OUT, labeler_root=LABELER_ROOT):
     output.mkdir(parents=True, exist_ok=True)
     datasets = []
     study = ROOT / "examples/vision-study"
@@ -106,31 +210,34 @@ def build(output=OUT):
         assert image.read_bytes()[:3] == b"\xff\xd8\xff", f"Unexpected screenshot format: {image}"
         shutil.copyfile(image, output / f"{directory.name}.jpg")
         datasets.append({"id": directory.name, "label": capture["title"], "url": capture["url"],
-                         "variants": {v: variant(read(directory / f"{v}.json")) for v in ("baseline", "revised")},
+                         "variants": {v: variant(read(directory / f"{v}.json")) for v in ("baseline", "revised", "condensed")
+                                      if (directory / f"{v}.json").exists()},
                          "dom": dom(capture), "screenshot": {"url": f"data/{directory.name}.jpg",
                          **{k: view[k] for k in ("width", "height", "scrollX", "scrollY")}},
                          "captureTime": capture.get("started_at"),
                          "limitations": ["Screenshot and DOM were captured sequentially; dynamic page changes may cause alignment differences.",
                                           "Only the first viewport screenshot is registered to these coordinates."]})
     for id_, label, sources in (
-        ("ewh-dashboard", "Google Cloud dashboard", {"baseline": "hierarchy.json", "revised": "reader-alternative.json"}),
-        ("nyt-homepage", "The New York Times homepage", {"revised": "hierarchy.json"})):
+        ("ewh-dashboard", "Google Cloud dashboard", {"baseline": "hierarchy.json", "revised": "reader-alternative.json", "condensed": "condensed.json"}),
+        ("nyt-homepage", "The New York Times homepage", {"revised": "hierarchy.json", "condensed": "condensed.json"})):
         directory = ROOT / "examples" / id_
         index = read(directory / "dom-index.json")
         datasets.append({"id": id_, "label": label, "url": "",
-                         "variants": {v: variant(read(directory / file)) for v, file in sources.items()},
+                         "variants": {v: variant(read(directory / file)) for v, file in sources.items()
+                                      if (directory / file).exists()},
                          "dom": dom(index), "screenshot": None, "documents": index.get("documents", []),
                          "limitations": index.get("limitations", [])})
     catalog = []
     checked = 0
     for dataset in datasets:
+        add_labeler_variants(dataset, labeler_root)
         try:
             checked += validate(dataset)
         except AssertionError as error:
             raise ValueError(f"{dataset['id']}: {error}") from error
         (output / f"{dataset['id']}.json").write_text(json.dumps(dataset, ensure_ascii=False, separators=(",", ":")))
         catalog.append({"id": dataset["id"], "label": dataset["label"], "url": dataset["url"],
-                        "variants": [{"id": v, "label": "Original hierarchy" if v == "baseline" else "Revised hierarchy"}
+                        "variants": [{"id": v, "label": VARIANT_LABELS.get(v, v.title() + " hierarchy")}
                                      for v in dataset["variants"]],
                         "hasScreenshot": dataset["screenshot"] is not None, "domCount": len(dataset["dom"]["nodes"])})
     (output / "catalog.json").write_text(json.dumps({"datasets": catalog}, ensure_ascii=False, indent=2))
@@ -139,4 +246,17 @@ def build(output=OUT):
 
 
 if __name__ == "__main__":
-    build()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", type=Path, default=OUT)
+    parser.add_argument("--labeler-root", type=Path, default=LABELER_ROOT)
+    parser.add_argument("--labeler-only", action="store_true",
+                        help="Add saved labeler trees to the current export without rebuilding captures")
+    parser.add_argument("--import-datasets", type=Path, metavar="DIR",
+                        help="Add prebuilt dataset JSON/JPEG pairs from DIR to the current export")
+    args = parser.parse_args()
+    if args.import_datasets:
+        import_datasets(args.output, args.import_datasets)
+    elif args.labeler_only:
+        import_labeler_examples(args.output, args.labeler_root)
+    else:
+        build(args.output, args.labeler_root)
