@@ -267,6 +267,8 @@ function setLeftView(next) {
 
 function applyVariant() {
   narrator.stop();
+  $('variant').dataset.last = $('variant').value;
+  { const url = new URL(location.href); url.searchParams.set('variant', $('variant').value); history.replaceState(null, '', url); }
   index = indexDataset(data, $('variant').value);
   metrics = computeMetrics(data, $('variant').value);
   showAllMetricTargets = false;
@@ -298,10 +300,16 @@ async function loadDataset(id) {
     if (controller.signal.aborted) return;
     data = incoming;
     $('variant').replaceChildren();
+    // Variants gated behind an inspector setting (for example gold standards) stay out of the menu until it is on.
     for (const option of catalog.find(item => item.id === id).variants) {
+      if (option.setting && !settings[option.setting]) continue;
       const item = el('option', option.label); item.value = option.id; $('variant').append(item);
     }
-    $('variant').value = data.variants.revised ? 'revised' : Object.keys(data.variants)[0];
+    // Keep the chosen variant across captures when it exists; `?variant=condensed` selects it on load.
+    const wanted = new URL(location.href).searchParams.get('variant') || $('variant').dataset.last;
+    const offered = [...$('variant').options].map(option => option.value);
+    $('variant').value = wanted && offered.includes(wanted) && data.variants[wanted] ? wanted
+      : (offered.includes('revised') ? 'revised' : offered[0]);
     $('variant').disabled = false;
     applyVariant();
     $('workspace').setAttribute('aria-busy', 'false');
@@ -369,6 +377,31 @@ for (const side of ['semantic', 'raw', 'dom']) {
     $('announcement').textContent = `All ${side === 'semantic' ? 'hierarchy' : 'DOM'} levels expanded.`;
   });
 }
+// Persistent viewer settings. `?gold=1` (or `0`) in the URL overrides the stored choice for that visit.
+const SETTING_KEYS = { gold: 'inspector.setting.gold' };
+function readSetting(name) {
+  const fromUrl = new URL(location.href).searchParams.get(name);
+  if (fromUrl === '1' || fromUrl === '0') return fromUrl === '1';
+  try { return localStorage.getItem(SETTING_KEYS[name]) === '1'; } catch { return false; }
+}
+const settings = { gold: readSetting('gold') };
+function writeSetting(name, value) {
+  settings[name] = value;
+  try { localStorage.setItem(SETTING_KEYS[name], value ? '1' : '0'); } catch { /* storage unavailable; keep in-memory choice */ }
+  const url = new URL(location.href); url.searchParams.set(name, value ? '1' : '0'); history.replaceState(null, '', url);
+}
+const goldToggle = $('gold-toggle');
+function renderGoldToggle() {
+  goldToggle.setAttribute('aria-pressed', String(settings.gold));
+  goldToggle.textContent = `Gold standard: ${settings.gold ? 'shown' : 'hidden'}`;
+}
+renderGoldToggle();
+goldToggle.addEventListener('click', async () => {
+  writeSetting('gold', !settings.gold);
+  renderGoldToggle();
+  if ($('dataset').value) await loadDataset($('dataset').value);
+  $('announcement').textContent = `Gold standard hierarchies ${settings.gold ? 'shown in' : 'hidden from'} the Hierarchy menu.`;
+});
 const narrationToggle = $('narration-toggle');
 if (!narrator.supported) {
   narrationToggle.disabled = true;
@@ -464,6 +497,8 @@ try {
   if (!response.ok) throw new Error('Example data could not be loaded.');
   catalog = (await response.json()).datasets;
   $('dataset-label').hidden = catalog.length === 1;
+  // The gold toggle only matters when some capture actually carries a gated gold variant.
+  goldToggle.hidden = !catalog.some(item => item.variants.some(option => option.setting === 'gold'));
   $('active-capture').hidden = catalog.length !== 1;
   $('active-capture').textContent = catalog.length === 1 ? catalog[0].label : '';
   $('dataset').replaceChildren();

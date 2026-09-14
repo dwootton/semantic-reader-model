@@ -12,7 +12,7 @@ export function summarize(values) {
 
 const fieldRoles = new Set(['checkbox', 'combobox', 'listbox', 'radio', 'searchbox', 'slider', 'spinbutton', 'switch', 'textbox']);
 const otherRoles = new Set(['none', 'presentation', 'article', 'banner', 'cell', 'columnheader', 'complementary', 'contentinfo', 'definition', 'dialog', 'document', 'feed', 'figure', 'form', 'grid', 'gridcell', 'group', 'img', 'list', 'listitem', 'log', 'main', 'marquee', 'math', 'menu', 'menubar', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'navigation', 'note', 'option', 'progressbar', 'region', 'row', 'rowgroup', 'rowheader', 'scrollbar', 'search', 'separator', 'status', 'tab', 'table', 'tablist', 'tabpanel', 'term', 'timer', 'toolbar', 'tooltip', 'tree', 'treegrid', 'treeitem', 'alert', 'alertdialog']);
-function targetKind(node) {
+export function targetKind(node) {
   const attrs = node.attributes || {};
   for (const role of String(attrs.role || '').toLowerCase().split(/\s+/)) {
     if (role === 'heading' || role === 'link' || role === 'button') return role;
@@ -30,7 +30,7 @@ function targetKind(node) {
   }
   return ['select', 'textarea'].includes(tag) ? 'field' : null;
 }
-function isHidden(node) {
+export function isHidden(node) {
   const attrs = node.attributes || {};
   return ['script', 'style', 'noscript', 'template'].includes(String(node.tag).toLowerCase()) || node.hidden === true || Object.hasOwn(attrs, 'hidden') || Object.hasOwn(attrs, 'inert')
     || String(attrs['aria-hidden']).toLowerCase() === 'true'
