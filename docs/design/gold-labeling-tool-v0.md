@@ -76,7 +76,7 @@ The person sees and selects compressed nodes, but every saved `sourceRef` is a r
 
 ## Editor
 
-Three panes: compressed tree (left), semantic tree being built (middle), screenshot or wireframe (right). Selecting in any pane highlights in the others.
+Three panes: compressed tree (left), semantic tree being built (middle), screenshot or wireframe (right). Selecting in any pane highlights in the others. The raw DOM is loaded with every page but hidden; a **Raw DOM** toggle shows it as an extra pane for checking what a compressed node stands for.
 
 **Layer-by-layer (top-down).** Level 1: select the page's major regions and name them. Then drill into one region; only its unassigned nodes are shown; repeat. Depth in the semantic tree is the zoom level, so this matches how the tree will be read.
 
@@ -187,7 +187,7 @@ These labels are a precursor to deciding what a good tree is, so the tool impose
 |---|---|---|
 | 0. Data ✅ | `.corpus.json`, `scripts/fetch_corpus.py`: downloads the main package, checks every shard and file SHA-256, unpacks only the labeler's files into `runs/corpus/` (2.2 GB, 39,773 files), lists the 285 Pro pages; `--verify` re-checks offline | Done 2026-10-04 |
 | 1. Loader + queue ✅ | `labeler/`: `queue_order.py` (one page per site first, round-robin by category), `server.py`, in-browser `corpus.mjs` (ports the SFT-109 builder's DOM join), page picker and read-only page view; corpus check | Any queued page opens with raw DOM ↔ compressed tree linking |
-| 2. Manual editor | `labeler/index.html` editable: three panes, multi-select (tree, search, wireframe rectangle), group / label / move / unwrap / merge / one reading unit / skip, coverage list, undo/redo, local autosave, Submit with `validate()` via POST to `labeler/server.py` | A main page can be labeled end to end, and the output imports into the inspector |
+| 2. Manual editor ✅ | `labeler/index.html` editable: three panes, multi-select (tree, search, wireframe rectangle), group / label / move / unwrap / merge / one reading unit / skip, coverage list, undo/redo, local autosave, Submit with `validate()` via POST to `labeler/server.py` | A main page can be labeled end to end, and the output imports into the inspector |
 | 3. Shared labels | Claims and submissions in the bucket, queue hides taken pages, claim expiry | Two labelers on two machines never get the same page |
 | 4. Speedups | Repeat structure across sibling cards; extra checks (leaf text, region containment, overlap); zoom preview | Labeling time per page measurably drops |
 | 5. LLM edits | Ollama draft and instruction edits, shown as diffs; silver drafts opt-in | A description produces a valid, accepted edit |
@@ -234,6 +234,20 @@ The queue is only an order. "Next page" = the first page in the chosen group's o
 **Result (2026-10-04).** Built as planned; run instructions in `labeler/README.md`. Queue: 2,556 main + 285 pro pages (4 skipped: mobile-only). Corpus check: all 2,841 pages pass (document hash, parse = source map, geometry present, every compact node retained); a full check takes about 35 seconds. Findings: the compactor never marks `<html>`/`<head>` with `data-r`, so the compressed tree starts at `<title>` and `<body>`; geometry covers only rendered elements (e.g. 545 of 1,268 on one docs page), which bounds what the phase 2 wireframe can draw; the server's listen backlog was raised from 5 to 64 because six parallel fetches per page dropped connections.
 
 **Deferred to phase 5:** silver drafts. Their IDs aren't page IDs; the mapping is in `labels/state.json`, which phase 5 adds to the fetch.
+
+### Phase 2 result (2026-10-04)
+
+Built in `labeler/`: `label-model.mjs` (every edit as a pure, tested operation), `wireframe.mjs` (rectangle and click selection over geometry), the editor in `labeler.mjs`, and `POST /api/labels` (draft, or submit validated server-side with `inspector/build_data.py`'s `validate()` against a DOM rebuilt from the page's source map) plus `POST /api/export`. Usage is in `labeler/README.md`.
+
+Decisions made while building:
+
+- **A unit covers its whole compressed subtree.** Placing a node inside an existing unit splits that unit down the path to it (siblings stay units), so labeling can go coarse to fine: place the whole header, then open its group and pull out the navigation. Placing a container that already holds units is refused; **One unit** merges them explicitly.
+- **New units and groups are inserted in document order** within their group; manual moves override that.
+- **Group `sourceRefs` stay empty** except the root, which references `<title>`; regions are carried by the units. `validate()` accepts this, and the inspector shows the tree with its links.
+- **Coverage** counts compressed nodes with direct text or an interactive or media tag that are neither inside a unit nor skipped.
+- **Labeler identity** is the OS user name until phase 3 switches to the HF username.
+
+Verified in headless Chrome on a real page: grouping, add-children, wireframe drag, the overlap refusal, skip, undo/redo, rename, full coverage, submit with server validation, export, auto-advance to the next page, and the exported dataset opening in the inspector with no console errors.
 
 ## Open questions
 

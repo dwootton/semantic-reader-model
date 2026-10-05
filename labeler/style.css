@@ -38,11 +38,14 @@ td.url { word-break: break-all; }
 /* Page view */
 .meta { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; margin-bottom: 10px; }
 .meta .url { word-break: break-all; }
-.panes { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; height: calc(100vh - 210px); min-height: 320px; }
+.panes { display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); gap: 10px; height: calc(100vh - 190px); min-height: 360px; }
+.pane[hidden] { display: none; }
 @media (max-width: 800px) { .panes { grid-template-columns: 1fr; height: auto; } .tree { max-height: 60vh; } }
 .pane { display: flex; flex-direction: column; min-height: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
 .pane h2 { font-size: 13px; margin: 0; padding: 8px 10px 4px; }
-.pane input[type="search"] { margin: 0 10px 6px; }
+.pane-tools { display: flex; gap: 6px; align-items: center; padding: 0 10px 6px; flex-wrap: wrap; }
+.pane-tools input[type="search"] { flex: 1 1 120px; }
+.check { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .tree { overflow: auto; flex: 1; padding: 2px 0 8px; font: 12.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace; }
 .row { display: flex; gap: 6px; padding: 0 10px; white-space: nowrap; cursor: pointer; }
 .row:hover { background: var(--bg); }
@@ -58,3 +61,38 @@ td.url { word-break: break-all; }
 .detail dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 10px; margin: 0; }
 .detail dt { color: var(--muted); }
 .detail dd { margin: 0; word-break: break-word; }
+
+/* Editor */
+.editbar { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.editrow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.editrow input[type="text"] { flex: 0 1 260px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+.editrow select, .pane-tools select { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 3px 4px; max-width: 160px; }
+.editrow .sep { margin-left: 10px; }
+button:disabled { opacity: .4; cursor: default; }
+button.link { border: none; background: none; color: var(--accent); padding: 0 4px; text-decoration: underline; }
+.target-line { font-size: 13px; }
+.status-line { font-size: 12.5px; color: var(--muted); margin-left: auto; }
+.status-line.error { color: var(--warn); }
+.row.unit, .row.placed { color: var(--muted); }
+.row.skipped .tag, .row.skipped .text { opacity: .45; text-decoration: line-through; }
+.row.group .text { font-weight: 600; }
+.row.target { box-shadow: inset 3px 0 0 var(--accent); }
+.field { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.field input, .field textarea { display: block; width: 100%; margin-top: 2px; font: 13px/1.4 system-ui, sans-serif;
+  color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 4px 6px; }
+.problems p { margin: 4px 10px; font-size: 12.5px; }
+.coverage { border-top: 1px solid var(--line); padding: 6px 10px; font-size: 12.5px; max-height: 25%; overflow: auto; }
+.coverage ul { margin: 4px 0 0; padding-left: 16px; }
+.coverage button.link { text-decoration: none; text-align: left; font: 12px ui-monospace, Menlo, monospace; }
+
+/* Wireframe */
+.wire { overflow: auto; flex: 1; border-top: 1px solid var(--line); }
+.wire-canvas { position: relative; cursor: crosshair; user-select: none; touch-action: none; }
+.wire-page { position: absolute; left: 0; top: 0; transform-origin: 0 0; background: var(--panel); }
+.box { position: absolute; border: 1px solid var(--line); overflow: hidden; color: var(--text); line-height: 1.2; font-size: 14px;
+  white-space: normal; word-break: break-word; pointer-events: none; }
+.box.leaf { background: color-mix(in srgb, var(--accent) 10%, transparent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.box.placed { color: var(--muted); }
+.box.skipped { opacity: .35; }
+.box.selected { outline: 3px solid var(--accent); outline-offset: -1px; background: color-mix(in srgb, var(--accent) 22%, transparent); z-index: 1; }
+.marquee { position: absolute; border: 1px dashed var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); pointer-events: none; }

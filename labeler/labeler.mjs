@@ -1,7 +1,9 @@
-// Labeler UI. Phase 1: page picker, read-only page view (compressed tree linked to raw DOM),
-// and the one-off corpus check (/?check). All page text is inserted as text, never as HTML.
+// Labeler UI: page picker, the editor (compressed DOM → semantic tree, with a wireframe and an
+// optional raw DOM pane), and the one-off corpus check (/?check). Page text is inserted as text, never as HTML.
 import { visibleRows } from '/inspector/model.mjs';
 import { compactFor, loadPage } from '/corpus.mjs';
+import * as M from '/label-model.mjs';
+import { boxes, hitTest, pageSize, rectSelect } from '/wireframe.mjs';
 
 const app = document.getElementById('app');
 const crumb = document.getElementById('crumb');
@@ -80,70 +82,91 @@ async function showPicker(queue) {
   render();
 }
 
-// ---------------------------------------------------------------- page view
+// ---------------------------------------------------------------- editor
 
 const shortText = node => node.ownText || node.attributes?.['aria-label'] || node.attributes?.alt ||
   node.attributes?.['data-destination'] || (node.children?.length ? '' : node.text) || '';
+const isTyping = el => el && (el.matches('input, textarea, select') || el.isContentEditable);
 
-function createTree({ title, nodes, roots, extras = () => [], rowClass = () => '', onSelect }) {
-  const byId = new Map(nodes.map(n => [n.id, n]));
-  const expanded = new Set(roots.flatMap(r => [r, ...byId.get(r).children]));
-  let query = '', selected = null, related = new Set();
-  const searchText = n => `${n.tag} ${n.ownText || ''} ${Object.values(n.attributes || {}).join(' ')}`;
-  const container = h('div', { class: 'tree', role: 'tree', 'aria-label': title, tabindex: 0 });
-  const search = h('input', { type: 'search', placeholder: `Search ${title.toLowerCase()}`, 'aria-label': `Search ${title}`,
+// A tree pane with multi-select. Its data can be replaced; the semantic tree changes on every edit.
+function createTree({ title, label = shortText, tagOf = n => `<${n.tag}>`, extras = () => [], rowClass = () => '',
+  onPick, onOpen = () => {}, controls = [] }) {
+  let byId = new Map(), roots = [], query = '', selected = new Set(), related = new Set(), focusId = null, anchor = null, order = [];
+  const expanded = new Set();
+  const searchText = n => `${n.tag || ''} ${n.label || ''} ${n.ownText || ''} ${Object.values(n.attributes || {}).join(' ')}`;
+  const count = h('span', { class: 'muted' });
+  const container = h('div', { class: 'tree', role: 'tree', 'aria-label': title, 'aria-multiselectable': 'true' });
+  const search = h('input', { type: 'search', placeholder: 'Search', 'aria-label': `Search ${title}`,
     oninput: event => { query = event.target.value; render(); } });
+  const element = h('section', { class: 'pane' }, h('h2', {}, title, ' ', count), h('div', { class: 'pane-tools' }, search, ...controls), container);
 
   function render() {
     const rows = visibleRows(byId, roots, expanded, query, searchText);
+    order = rows.map(r => r.node.id);
+    if (!order.includes(focusId)) focusId = order.find(id => selected.has(id)) ?? order[0] ?? null;
     container.replaceChildren(...rows.map(({ node, depth, open, hasChildren }) => h('div', {
-      class: `row ${rowClass(node)} ${related.has(node.id) ? 'related' : ''}`, role: 'treeitem',
+      class: `row ${rowClass(node)}${related.has(node.id) ? ' related' : ''}`, role: 'treeitem',
       'aria-level': depth + 1, 'aria-expanded': hasChildren ? String(open) : null,
-      'aria-selected': String(node.id === selected), tabindex: node.id === selected ? 0 : -1,
-      'data-id': node.id, style: `padding-left:${10 + depth * 14}px` },
+      'aria-selected': String(selected.has(node.id)), tabindex: node.id === focusId ? 0 : -1,
+      'data-id': node.id, style: `padding-left:${8 + depth * 14}px` },
     h('span', { class: 'toggle', 'aria-hidden': 'true' }, hasChildren ? (open ? '▾' : '▸') : ''),
-    h('span', { class: 'tag' }, `<${node.tag}>`), ...extras(node),
-    h('span', { class: 'text' }, shortText(node)))));
+    h('span', { class: 'tag' }, tagOf(node)), ...extras(node), h('span', { class: 'text' }, label(node)))));
   }
-
+  const rowEl = id => container.querySelector(`[data-id="${CSS.escape(id)}"]`);
   function reveal(id) {
     for (let p = byId.get(id)?.parent; p; p = byId.get(p)?.parent) expanded.add(p);
     render();
-    container.querySelector(`[data-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'nearest' });
+    rowEl(id)?.scrollIntoView({ block: 'nearest' });
   }
-
-  function toggle(id) {
-    if (expanded.has(id)) expanded.delete(id); else expanded.add(id);
-    render();
+  function toggle(id) { if (expanded.has(id)) expanded.delete(id); else expanded.add(id); render(); }
+  function pick(id, event) {
+    const range = event.shiftKey && anchor && order.includes(anchor);
+    const ids = range ? order.slice(Math.min(order.indexOf(anchor), order.indexOf(id)), Math.max(order.indexOf(anchor), order.indexOf(id)) + 1) : [id];
+    if (!range) anchor = id;
+    focusId = id;
+    onPick(ids, { add: event.metaKey || event.ctrlKey || range, range });
   }
 
   container.addEventListener('click', event => {
     const row = event.target.closest('.row');
     if (!row) return;
-    if (event.target.closest('.toggle')) toggle(row.dataset.id);
-    else onSelect(row.dataset.id);
+    if (event.target.closest('.toggle')) toggle(row.dataset.id); else pick(row.dataset.id, event);
   });
+  container.addEventListener('dblclick', event => { const row = event.target.closest('.row'); if (row) onOpen(row.dataset.id); });
   container.addEventListener('keydown', event => {
-    const rows = [...container.querySelectorAll('.row')];
-    const current = document.activeElement.closest?.('.row');
-    const i = rows.indexOf(current);
-    const focus = row => { if (row) { rows.forEach(r => r.tabIndex = -1); row.tabIndex = 0; row.focus(); } };
-    const node = current && byId.get(current.dataset.id);
-    if (event.key === 'ArrowDown') focus(rows[i + 1] || rows[0]);
-    else if (event.key === 'ArrowUp') focus(rows[Math.max(0, i - 1)]);
-    else if (node && event.key === 'ArrowRight' && node.children.length && !expanded.has(node.id)) { toggle(node.id); focus(container.querySelector(`[data-id="${CSS.escape(node.id)}"]`)); }
-    else if (node && event.key === 'ArrowLeft') {
-      if (expanded.has(node.id)) { toggle(node.id); focus(container.querySelector(`[data-id="${CSS.escape(node.id)}"]`)); }
-      else if (node.parent) focus(container.querySelector(`[data-id="${CSS.escape(node.parent)}"]`));
-    } else if (node && (event.key === 'Enter' || event.key === ' ')) onSelect(node.id);
+    const i = order.indexOf(focusId);
+    const node = byId.get(focusId);
+    const go = j => { if (order[j]) { focusId = order[j]; render(); rowEl(focusId).focus(); if (event.shiftKey) pick(focusId, event); } };
+    if (event.altKey) return; // Alt+arrows belong to the editor's move commands
+    if (event.key === 'ArrowDown') go(i + 1);
+    else if (event.key === 'ArrowUp') go(Math.max(0, i - 1));
+    else if (event.key === 'ArrowRight' && node?.children?.length) { expanded.add(focusId); render(); rowEl(focusId).focus(); }
+    else if (event.key === 'ArrowLeft' && node) {
+      if (expanded.has(focusId)) { expanded.delete(focusId); render(); rowEl(focusId).focus(); } else if (node.parent && order.includes(node.parent)) go(order.indexOf(node.parent));
+    } else if (event.key === ' ' && focusId) pick(focusId, { metaKey: true });
+    else if (event.key === 'Enter' && focusId) pick(focusId, {});
     else return;
     event.preventDefault();
   });
 
-  render();
   return {
-    byId, element: h('section', { class: 'pane' }, h('h2', {}, `${title} · ${nodes.length} nodes`), search, container),
-    select(id, relatedIds = []) { selected = id; related = new Set(relatedIds); if (id) reveal(id); else render(); },
+    element,
+    setData(nodes, newRoots) {
+      byId = new Map(nodes.map(n => [n.id, { ...n }]));
+      for (const n of byId.values()) for (const c of n.children) if (byId.has(c)) byId.get(c).parent = n.id;
+      roots = newRoots.filter(r => byId.has(r));
+      if (!expanded.size) roots.forEach(r => { expanded.add(r); byId.get(r).children.forEach(c => expanded.add(c)); });
+      count.textContent = `· ${byId.size}`;
+      render();
+    },
+    setSelection(ids, relatedIds = []) { selected = new Set(ids); related = new Set(relatedIds); render(); },
+    expand(id) { expanded.add(id); },
+    reveal, render,
+    matching() {
+      const term = query.trim().toLowerCase();
+      return term ? order.filter(id => searchText(byId.get(id)).toLowerCase().includes(term)) : [];
+    },
+    focus() { (rowEl(focusId) || container).focus?.(); },
   };
 }
 
@@ -151,56 +174,406 @@ async function showPage(queue, page, groupName) {
   const group = queue.groups[groupName] ? groupName : 'main';
   const entries = queue.groups[group];
   const index = entries.findIndex(e => e.page === page);
-  const entry = entries[index];
-  crumb.textContent = entry ? `${group} #${entry.order} of ${entries.length}` : page;
+  crumb.textContent = index >= 0 ? `${group} #${entries[index].order} of ${entries.length}` : page;
   app.replaceChildren(h('p', { class: 'muted' }, 'Loading page…'));
-  let model;
+  let model, saved = null;
   try {
     model = await loadPage(page);
+    saved = await getJson(`/api/labels/${page}`);
   } catch (error) {
     app.replaceChildren(h('p', { class: 'error' }, `Could not load ${page}: ${error.message}`), h('a', { href: `/?group=${group}` }, 'Back to queue'));
     return;
   }
 
-  const collapsedInto = new Map();
-  for (const n of model.raw.nodes) {
-    const rep = n.compact.representedBy;
-    if (n.compact.disposition !== 'retained' && rep) collapsedInto.set(rep, [...(collapsedInto.get(rep) || []), n.id]);
-  }
-  const detail = h('div', { class: 'detail' }, h('p', { class: 'muted' }, 'Select a node to see how the compressed view and the raw DOM relate.'));
-  const compactTree = createTree({ title: 'Compressed DOM', nodes: model.compact.nodes, roots: model.compact.roots,
-    onSelect: id => { compactTree.select(id); rawTree.select(id, collapsedInto.get(id) || []); describe(id, id); } });
-  const rawTree = createTree({ title: 'Raw DOM', nodes: model.raw.nodes, roots: model.raw.roots,
+  const ctx = M.pageIndex(model);
+  let label = saved ? M.fromSaved(saved) : M.newLabel(ctx);
+  let status = saved?.provenance?.status || 'new';
+  let target = label.rootId;
+  let selection = { pane: null, ids: [] };
+  let hidePlaced = false;
+  const undoStack = [], redoStack = [];
+  const knownGroups = new Set();
+  let saveTimer = null, pendingSave = false;
+
+  // ---- panes
+  const statusLine = h('span', { class: 'status-line', role: 'status' });
+  const hideBox = h('label', { class: 'check' }, h('input', { type: 'checkbox', onchange: event => { hidePlaced = event.target.checked; update(); } }), ' Hide placed');
+  const selectMatches = h('button', { type: 'button', title: 'Select every node matching the search',
+    onclick: () => { const ids = compactTree.matching(); if (ids.length) choose('compact', ids); else say('Type a search first.', true); } }, 'Select matches');
+  const compactTree = createTree({ title: 'Compressed DOM', controls: [selectMatches, hideBox],
+    rowClass: n => ({ leaf: 'unit', placed: 'placed', skipped: 'skipped' })[placementOf(n.id)] || '',
+    extras: n => placementOf(n.id) === 'leaf' ? [h('span', { class: 'badge' }, 'unit')]
+      : placementOf(n.id) === 'skipped' && n.id in label.skipped ? [h('span', { class: 'badge' }, `skipped: ${label.skipped[n.id]}`)] : [],
+    onPick: (ids, how) => choose('compact', ids, how) });
+  const semanticTree = createTree({ title: 'Semantic tree',
+    label: n => n.label, tagOf: n => n.kind === 'group' ? (n.id === label.rootId ? '▣' : '▤') : '•',
+    rowClass: n => `${n.kind === 'group' ? 'group' : 'leaf'}${n.id === target ? ' target' : ''}`,
+    extras: n => n.kind === 'dom' ? [h('span', { class: 'badge' }, n.display_role || '')] : n.id === target ? [h('span', { class: 'badge' }, 'adding here')] : [],
+    onPick: (ids, how) => choose('semantic', ids, how), onOpen: id => openGroup(id) });
+  const rawTree = createTree({ title: 'Raw DOM',
     rowClass: n => n.compact.disposition === 'retained' ? '' : 'folded',
     extras: n => n.compact.disposition === 'retained' ? [] : [h('span', { class: 'badge' }, n.compact.disposition)],
-    onSelect: id => {
-      const match = compactFor(id, rawTree.byId, compactTree.byId);
-      rawTree.select(id);
-      compactTree.select(match);
-      describe(id, match);
-    } });
+    onPick: ids => { const match = compactFor(ids[0], rawById, ctx.byId); rawTree.setSelection([ids[0]]); if (match) choose('compact', [match], {}, 'raw'); } });
+  const rawById = new Map(model.raw.nodes.map(n => [n.id, n]));
+  rawTree.setData(model.raw.nodes, model.raw.roots);
+  rawTree.element.hidden = true;
 
-  function describe(rawId, compactId) {
-    const n = rawTree.byId.get(rawId);
-    const mapping = compactId === rawId ? 'shown as itself in the compressed view'
-      : compactId && n.compact.representedBy === compactId ? `collapsed into ${compactId}`
-        : compactId ? `${n.compact.disposition}; nearest compressed ancestor is ${compactId}` : 'not in the compressed view';
-    const rows = [['ID', n.id], ['Tag', n.tag], ['Compressed', mapping],
-      ['Box', n.rect ? `${Math.round(n.rect.x)}, ${Math.round(n.rect.y)} · ${Math.round(n.rect.width)}×${Math.round(n.rect.height)}` : 'no geometry'],
-      ...Object.entries(n.attributes).map(([k, v]) => [k, v]),
-      ['Text', n.text ? n.text.slice(0, 500) + (n.text.length > 500 || n.textTruncated ? '…' : '') : '']];
-    detail.replaceChildren(h('dl', {}, ...rows.filter(([, v]) => v).flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, String(v))])));
-  }
+  const wire = createWireframe();
+  const detail = h('div', { class: 'detail' });
+  const sourceDetail = h('div', { class: 'detail' });
+  const coverage = h('details', { class: 'coverage', open: true });
+  const problems = h('div', { class: 'problems' });
+  compactTree.element.append(sourceDetail);
+  semanticTree.element.append(detail, problems, coverage);
 
-  const nav = (target, label) => target ? h('a', { href: pageHref(target.page, group) }, label) : h('span', { class: 'muted' }, label);
+  // ---- toolbar
+  const groupInput = h('input', { type: 'text', placeholder: 'Group label (G), Enter to group', 'aria-label': 'Group label',
+    onkeydown: event => { if (event.key === 'Enter') { event.preventDefault(); groupSelection(event.shiftKey); } if (event.key === 'Escape') groupInput.blur(); } });
+  const moveSelect = h('select', { 'aria-label': 'Move selection to group', onchange: event => {
+    const to = event.target.value; event.target.value = '';
+    if (to) apply(() => M.moveTo(label, selection.ids, to));
+  } });
+  const button = (text, title, run, kind) => h('button', { type: 'button', title, 'data-kind': kind, onclick: run }, text);
+  const compactButtons = [
+    button('Add', 'Add the selected nodes to the target group as units (A)', () => placeSelection('add'), 'compact'),
+    button('Add children', 'Add each child of the selection as its own unit (C)', () => placeSelection('children'), 'compact'),
+    button('Group', 'Group the selection under the label typed at left (G, then Enter)', () => groupSelection(false), 'compact'),
+    button('Group children', 'New group with each child as a unit (Shift+Enter in the label box)', () => groupSelection(true), 'compact'),
+    button('One unit', 'Make the selected node one unit, merging any units inside it (U)', () => placeSelection('unit'), 'compact-one'),
+    button('Skip', 'Mark as not content, with a reason (S)', () => skipSelection(), 'compact'),
+    button('Unskip', 'Remove the skip', () => apply(() => M.unskip(label, selection.ids)), 'compact'),
+  ];
+  const treeButtons = [
+    button('Group', 'Wrap the selected siblings in a new group (G, then Enter)', () => groupSelection(false), 'tree'),
+    button('Open', 'Add new units inside this group (O or double-click)', () => openGroup(selection.ids[0]), 'tree-group'),
+    button('Unwrap', 'Replace the group by its children', () => apply(() => selection.ids.forEach(id => M.unwrap(label, id))), 'tree'),
+    button('Merge', 'Merge the selected groups into the first', () => apply(() => M.merge(label, selection.ids)), 'tree'),
+    button('↑', 'Move up (Alt+↑)', () => apply(() => M.move(label, selection.ids, -1)), 'tree'),
+    button('↓', 'Move down (Alt+↓)', () => apply(() => M.move(label, selection.ids, 1)), 'tree'),
+    button('→', 'Into the group above (Alt+→)', () => apply(() => M.indent(label, selection.ids)), 'tree'),
+    button('←', 'Out of the current group (Alt+←)', () => apply(() => M.outdent(label, selection.ids)), 'tree'),
+    moveSelect,
+    button('Split', 'Split a unit into its children', () => apply(() => selection.ids.forEach(id => M.splitLeaf(label, ctx, id))), 'tree'),
+    button('Remove', 'Remove from the tree; units return to unplaced (Delete)', () => apply(() => { M.remove(label, selection.ids); selection = { pane: null, ids: [] }; }), 'tree'),
+  ];
+  const targetLine = h('span', { class: 'target-line' });
+  const undoButton = button('Undo', 'Undo (⌘Z)', () => undo());
+  const redoButton = button('Redo', 'Redo (⇧⌘Z)', () => redo());
+  const submitButton = h('button', { type: 'button', class: 'primary', onclick: () => submit() }, 'Submit');
+  const rawToggle = h('button', { type: 'button', onclick: () => { rawTree.element.hidden = !rawTree.element.hidden; layout(); } }, 'Raw DOM');
+  const nav = (entry, text) => entry ? h('a', { href: pageHref(entry.page, group) }, text) : h('span', { class: 'muted' }, text);
+  const panes = h('div', { class: 'panes' }, compactTree.element, semanticTree.element, wire.element, rawTree.element);
+
   app.replaceChildren(
     h('div', { class: 'meta' },
       h('a', { href: `/?group=${group}` }, '← Queue'), nav(entries[index - 1], 'Previous'), nav(entries[index + 1], 'Next'),
       h('a', { class: 'url', href: model.url, target: '_blank', rel: 'noreferrer' }, model.url),
       h('span', { class: 'muted' }, model.category || ''),
-      h('span', { class: 'muted' }, `${model.stats.elements} elements → ${model.stats.compactNodes} compressed · ${model.stats.geometry} with geometry`)),
-    h('div', { class: 'panes' }, compactTree.element, rawTree.element));
-  rawTree.element.append(detail);
+      h('span', { class: 'muted' }, `${model.stats.elements} elements → ${model.stats.compactNodes} compressed`), rawToggle),
+    h('div', { class: 'editbar' },
+      h('div', { class: 'editrow' }, targetLine, groupInput, undoButton, redoButton, statusLine, submitButton),
+      h('div', { class: 'editrow' }, h('span', { class: 'muted' }, 'Compressed:'), ...compactButtons,
+        h('span', { class: 'muted sep' }, 'Tree:'), ...treeButtons)),
+    panes);
+  function layout() {
+    panes.style.setProperty('--cols', rawTree.element.hidden ? 3 : 4);
+    rawToggle.setAttribute('aria-pressed', String(!rawTree.element.hidden));
+  }
+  layout();
+
+  // ---- state helpers
+  let placementMap = new Map();
+  function placementOf(id) { return placementMap.get(id); }
+  function leavesUnder(id) {
+    const node = label.nodes[id];
+    return node.kind === 'dom' ? [node.sourceRefs[0]] : node.children.flatMap(leavesUnder);
+  }
+
+  function choose(pane, ids, how = {}, from = pane) {
+    const current = selection.pane === pane ? selection.ids : [];
+    let next = ids;
+    if (how.add && !how.range) next = ids.every(id => current.includes(id)) ? current.filter(id => !ids.includes(id)) : [...new Set([...current, ...ids])];
+    else if (how.range) next = [...new Set([...current, ...ids])];
+    selection = { pane, ids: next };
+    if (pane === 'compact' && next.length && from !== 'compact') { compactTree.reveal(next[0]); wire.scrollTo(next[0]); }
+    if (pane === 'compact' && next.length && from === 'compact') wire.scrollTo(next[next.length - 1]);
+    if (pane === 'compact' && next.length === 1 && !rawTree.element.hidden) { rawTree.setSelection([next[0]]); rawTree.reveal(next[0]); }
+    update();
+  }
+
+  function apply(operation) {
+    const snapshot = JSON.stringify(label);
+    try {
+      operation();
+      undoStack.push(snapshot);
+      if (undoStack.length > 200) undoStack.shift();
+      redoStack.length = 0;
+      changed();
+      say('');
+    } catch (error) {
+      label = JSON.parse(snapshot);
+      say(error.message, true);
+    }
+    update();
+  }
+  function undo() { if (undoStack.length) { redoStack.push(JSON.stringify(label)); label = JSON.parse(undoStack.pop()); changed(); update(); } }
+  function redo() { if (redoStack.length) { undoStack.push(JSON.stringify(label)); label = JSON.parse(redoStack.pop()); changed(); update(); } }
+  function say(text, error = false) { statusLine.textContent = text; statusLine.classList.toggle('error', error); }
+
+  function changed() {
+    if (!label.nodes[target]) target = label.rootId;
+    selection.ids = selection.pane === 'semantic' ? selection.ids.filter(id => label.nodes[id]) : selection.ids;
+    if (status === 'submitted') status = 'draft';
+    pendingSave = true;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => save('draft'), 800);
+  }
+
+  async function save(asStatus) {
+    clearTimeout(saveTimer);
+    pendingSave = false;
+    const body = M.toSaved(label, ctx, asStatus);
+    try {
+      const response = await fetch('/api/labels', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error);
+      status = asStatus;
+      say(`${asStatus === 'submitted' ? 'Submitted' : 'Draft saved'} ${new Date().toLocaleTimeString()}`);
+      return body;
+    } catch (error) {
+      say(`Save failed: ${error.message}`, true);
+      throw error;
+    }
+  }
+  window.addEventListener('pagehide', () => {
+    if (pendingSave) fetch('/api/labels', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(M.toSaved(label, ctx, 'draft')) });
+  });
+
+  // ---- commands
+  function placeSelection(kind) {
+    if (selection.pane !== 'compact') return say('Select compressed nodes first.', true);
+    apply(() => {
+      if (kind === 'add') M.addLeaves(label, ctx, selection.ids, target);
+      else if (kind === 'children') M.addChildren(label, ctx, selection.ids, target);
+      else selection.ids.forEach(id => M.makeUnit(label, ctx, id, target));
+      selection = { pane: null, ids: [] };
+    });
+  }
+  function groupSelection(children) {
+    const text = groupInput.value.trim();
+    if (!text) { groupInput.focus(); return say('Type a group label, then press Enter.'); }
+    if (!selection.ids.length) return say('Select nodes to group first.', true);
+    let created = null;
+    apply(() => {
+      created = selection.pane === 'compact' ? M.groupCompact(label, ctx, selection.ids, target, text, children)
+        : M.groupNodes(label, selection.ids, text);
+    });
+    if (created && label.nodes[created]) { groupInput.value = ''; semanticTree.expand(created); choose('semantic', [created]); }
+  }
+  function skipSelection() {
+    if (selection.pane !== 'compact') return say('Select compressed nodes to skip.', true);
+    const reason = prompt('Why skip? (e.g. decorative, advertisement, hidden)', 'not content');
+    if (reason === null) return;
+    apply(() => { M.skip(label, ctx, selection.ids, reason); selection = { pane: null, ids: [] }; });
+  }
+  function openGroup(id) {
+    const node = label.nodes[id];
+    if (!node) return;
+    if (node.kind !== 'group') return say('Only groups can be opened. Use Split to break a unit apart.', true);
+    target = id;
+    semanticTree.expand(id);
+    say(`Adding to "${node.label}".`);
+    update();
+  }
+
+  async function submit() {
+    const { errors } = M.validateLabel(label, ctx);
+    if (errors.length) return say(`Fix ${errors.length} problem${errors.length > 1 ? 's' : ''} before submitting.`, true);
+    try {
+      const body = await save('submitted');
+      await fetch('/api/export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(M.toDataset(model, body)) });
+      const labels = await getJson('/api/labels');
+      const next = entries.find(e => !labels[e.page]);
+      say('Submitted. Opening the next page…');
+      if (next) setTimeout(() => { location.href = pageHref(next.page, group); }, 700);
+    } catch { /* save() already reported the error */ }
+  }
+
+  document.addEventListener('keydown', event => {
+    if (isTyping(event.target)) return;
+    const mod = event.metaKey || event.ctrlKey;
+    if (mod && event.key.toLowerCase() === 'z') { event.shiftKey ? redo() : undo(); event.preventDefault(); return; }
+    if (mod) return;
+    const tree = selection.pane === 'semantic';
+    if (event.altKey && tree) {
+      const moves = { ArrowUp: () => M.move(label, selection.ids, -1), ArrowDown: () => M.move(label, selection.ids, 1),
+        ArrowRight: () => M.indent(label, selection.ids), ArrowLeft: () => M.outdent(label, selection.ids) };
+      if (moves[event.key]) { apply(moves[event.key]); event.preventDefault(); }
+      return;
+    }
+    const keys = { g: () => groupInput.focus(), a: () => placeSelection('add'), c: () => placeSelection('children'),
+      u: () => placeSelection('unit'), s: () => skipSelection(), o: () => tree && openGroup(selection.ids[0]),
+      Delete: () => tree && apply(() => { M.remove(label, selection.ids); selection = { pane: null, ids: [] }; }),
+      Backspace: () => tree && apply(() => { M.remove(label, selection.ids); selection = { pane: null, ids: [] }; }),
+      Escape: () => { if (selection.ids.length) { selection = { pane: null, ids: [] }; update(); } else if (target !== label.rootId) openGroup(label.rootId); } };
+    const run = keys[event.key];
+    if (run) { run(); event.preventDefault(); }
+  });
+
+  // ---- rendering
+  function update() {
+    placementMap = M.placement(label, ctx);
+    for (const n of Object.values(label.nodes)) if (n.kind === 'group' && !knownGroups.has(n.id)) { knownGroups.add(n.id); semanticTree.expand(n.id); }
+
+    // Compressed pane: inside an opened group, only that group's region; optionally without placed nodes.
+    const region = target === label.rootId ? [] : leavesUnder(target).filter(id => ctx.byId.has(id));
+    const visible = hidePlaced ? model.compact.nodes.filter(n => !placementMap.has(n.id) || region.length) : model.compact.nodes;
+    const keep = new Set(visible.map(n => n.id));
+    compactTree.setData(visible.map(n => ({ ...n, children: n.children.filter(c => keep.has(c)) })),
+      region.length ? region : model.compact.roots.filter(r => keep.has(r)));
+    const relatedCompact = selection.pane === 'semantic' ? selection.ids.filter(id => label.nodes[id]).flatMap(leavesUnder) : [];
+    compactTree.setSelection(selection.pane === 'compact' ? selection.ids : [], relatedCompact);
+    semanticTree.setData(Object.values(label.nodes), [label.rootId]);
+    const containing = selection.pane === 'compact' ? selection.ids.map(id => unitFor(id)).filter(Boolean) : [];
+    semanticTree.setSelection(selection.pane === 'semantic' ? selection.ids : [], containing);
+    wire.update(placementMap, selection.pane === 'compact' ? selection.ids : relatedCompact);
+
+    const groups = Object.values(label.nodes).filter(n => n.kind === 'group');
+    moveSelect.replaceChildren(h('option', { value: '' }, 'Move to…'), ...groups.map(g => h('option', { value: g.id }, g.label)));
+    for (const b of [...compactButtons, ...treeButtons]) {
+      const kind = b.dataset.kind;
+      b.disabled = !selection.ids.length || (kind?.startsWith('compact') && selection.pane !== 'compact') || (kind?.startsWith('tree') && selection.pane !== 'semantic')
+        || (kind === 'compact-one' && selection.ids.length !== 1) || (kind === 'tree-group' && label.nodes[selection.ids[0]]?.kind !== 'group');
+    }
+    undoButton.disabled = !undoStack.length;
+    redoButton.disabled = !redoStack.length;
+    const path = [];
+    const parentMap = M.parents(label);
+    for (let id = target; id; id = parentMap.get(id)) path.unshift(label.nodes[id].label);
+    targetLine.replaceChildren('Adding to: ', h('strong', {}, path.join(' › ')),
+      target !== label.rootId ? h('button', { type: 'button', class: 'link', onclick: () => openGroup(parentMap.get(target)) }, 'Up') : '');
+    submitButton.textContent = status === 'submitted' ? 'Submitted ✓' : 'Submit';
+    renderDetail();
+    renderProblems();
+  }
+
+  function unitFor(compactId) {
+    for (let id = compactId; id; id = ctx.byId.get(id)?.parent) {
+      const leaf = label.nodes[`leaf-${id}`];
+      if (leaf) return leaf.id;
+    }
+    return null;
+  }
+
+  function renderDetail() {
+    // Source detail for one compressed node.
+    if (selection.pane === 'compact' && selection.ids.length === 1) {
+      const n = rawById.get(selection.ids[0]);
+      const rows = [['Element', `<${n.tag}> ${n.id}`], ['Placement', placementOf(n.id) || 'not placed'],
+        ...Object.entries(n.attributes).map(([k, v]) => [k, v]), ['Text', (n.text || '').slice(0, 400)]];
+      sourceDetail.replaceChildren(h('dl', {}, ...rows.filter(([, v]) => v).flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, String(v))])));
+    } else {
+      sourceDetail.replaceChildren(h('p', { class: 'muted' }, selection.pane === 'compact' ? `${selection.ids.length} nodes selected.` : 'Click nodes here or draw a box on the wireframe.'));
+    }
+    // Editable fields for one tree node.
+    if (selection.pane !== 'semantic' || selection.ids.length !== 1) {
+      detail.replaceChildren(h('p', { class: 'muted' }, selection.pane === 'semantic' ? `${selection.ids.length} tree nodes selected.` : 'Select a tree node to edit its label and notes.'));
+      return;
+    }
+    const node = label.nodes[selection.ids[0]];
+    const field = (name, text, multiline) => h('label', { class: 'field' }, text, h(multiline ? 'textarea' : 'input', {
+      rows: multiline ? 2 : null, value: multiline ? null : (node[name] || ''),
+      onchange: event => apply(() => M.setField(label, node.id, name, event.target.value)) }, multiline ? (node[name] || '') : null));
+    const parts = [field('label', 'Label'), field('summary', 'Summary', true), field('notes', 'Notes', true)];
+    if (node.id === label.rootId) parts.push(h('label', { class: 'field' }, 'Page notes', h('textarea', { rows: 2,
+      onchange: event => apply(() => { label.notes = event.target.value; }) }, label.notes || '')));
+    if (node.kind === 'dom') parts.push(h('p', { class: 'muted' }, `Unit <${ctx.byId.get(node.sourceRefs[0])?.tag}> ${node.sourceRefs[0]}: ${(node.reading_text || '').slice(0, 200)}`));
+    detail.replaceChildren(...parts);
+  }
+
+  function renderProblems() {
+    const { errors, warnings } = M.validateLabel(label, ctx);
+    problems.replaceChildren(...errors.map(e => h('p', { class: 'error' }, e)), ...warnings.filter(w => !/not placed/.test(w)).map(w => h('p', { class: 'muted' }, w)));
+    const missing = M.uncovered(label, ctx);
+    coverage.replaceChildren(h('summary', {}, missing.length ? `Not placed: ${missing.length} nodes with content` : 'Everything with content is placed or skipped ✓'),
+      h('ul', {}, ...missing.slice(0, 200).map(id => h('li', {}, h('button', { type: 'button', class: 'link',
+        onclick: () => choose('compact', [id], {}, 'coverage') }, `<${ctx.byId.get(id).tag}> ${shortText(ctx.byId.get(id)).slice(0, 80)}`)))));
+  }
+
+  // ---- wireframe
+  function createWireframe() {
+    const list = boxes(model);
+    const size = pageSize(list, model.viewport || { width: 1365, height: 900 });
+    const els = new Map();
+    const page = h('div', { class: 'wire-page', style: `width:${size.width}px;height:${size.height}px` });
+    for (const b of [...list].sort((a, z) => z.rect.width * z.rect.height - a.rect.width * a.rect.height)) {
+      const style = `left:${b.rect.x}px;top:${b.rect.y}px;width:${b.rect.width}px;height:${b.rect.height}px;` +
+        (b.style ? `font-size:${b.style.fontSize}px;${b.style.bold ? 'font-weight:600;' : ''}` : '');
+      const el = h('div', { class: 'box', style, 'data-id': b.id }, b.text ? b.text.slice(0, 300) : '');
+      els.set(b.id, el);
+      page.append(el);
+    }
+    const marquee = h('div', { class: 'marquee', hidden: true });
+    const canvas = h('div', { class: 'wire-canvas' }, page, marquee);
+    const scroller = h('div', { class: 'wire' }, canvas);
+    let scale = 1, zoom = 'fit';
+    const zoomSelect = h('select', { 'aria-label': 'Wireframe zoom', onchange: event => { zoom = event.target.value; fit(); } },
+      h('option', { value: 'fit' }, 'Fit width'), h('option', { value: '0.5' }, '50%'), h('option', { value: '1' }, '100%'));
+    const element = h('section', { class: 'pane' }, h('h2', {}, 'Wireframe ', h('span', { class: 'muted' }, `· ${list.length} boxes`)),
+      h('div', { class: 'pane-tools' }, zoomSelect, h('span', { class: 'muted' }, 'Drag to select · Alt-click selects the parent')), scroller);
+    function fit() {
+      scale = zoom === 'fit' ? Math.max(0.1, (scroller.clientWidth - 4) / size.width) : Number(zoom);
+      page.style.transform = `scale(${scale})`;
+      canvas.style.width = `${size.width * scale}px`;
+      canvas.style.height = `${size.height * scale}px`;
+    }
+    new ResizeObserver(fit).observe(scroller);
+    const point = event => { const r = canvas.getBoundingClientRect(); return { x: (event.clientX - r.left) / scale, y: (event.clientY - r.top) / scale }; };
+    let start = null;
+    canvas.addEventListener('pointerdown', event => { if (event.button === 0) { start = point(event); canvas.setPointerCapture(event.pointerId); } });
+    canvas.addEventListener('pointermove', event => {
+      if (!start) return;
+      const p = point(event);
+      Object.assign(marquee.style, { left: `${Math.min(start.x, p.x) * scale}px`, top: `${Math.min(start.y, p.y) * scale}px`,
+        width: `${Math.abs(p.x - start.x) * scale}px`, height: `${Math.abs(p.y - start.y) * scale}px` });
+      marquee.hidden = false;
+    });
+    canvas.addEventListener('pointerup', event => {
+      if (!start) return;
+      const p = point(event), from = start;
+      start = null;
+      marquee.hidden = true;
+      const how = { add: event.metaKey || event.ctrlKey || event.shiftKey };
+      if (Math.abs(p.x - from.x) < 4 && Math.abs(p.y - from.y) < 4) {
+        let id = hitTest(list, p.x, p.y);
+        if (id && event.altKey) id = ctx.byId.get(id).parent || id;
+        if (id) choose('compact', [id], how, 'wire');
+      } else {
+        const area = { x: Math.min(from.x, p.x), y: Math.min(from.y, p.y), width: Math.abs(p.x - from.x), height: Math.abs(p.y - from.y) };
+        const ids = rectSelect(list, area, id => ctx.byId.get(id)?.parent);
+        if (ids.length) choose('compact', ids, how, 'wire');
+      }
+    });
+    return {
+      element,
+      update(placements, highlighted) {
+        const lit = new Set(highlighted);
+        for (const [id, el] of els) {
+          const state = placements.get(id);
+          el.className = `box${state ? ` ${state}` : ''}${lit.has(id) ? ' selected' : ''}`;
+        }
+      },
+      scrollTo(id) {
+        const r = list.find(b => b.id === id)?.rect;
+        if (!r) return;
+        const top = r.y * scale, bottom = (r.y + r.height) * scale;
+        if (top < scroller.scrollTop || bottom > scroller.scrollTop + scroller.clientHeight) scroller.scrollTop = Math.max(0, top - 40);
+      },
+    };
+  }
+
+  update();
+  if (saved) say(`Loaded ${status} label.`);
 }
 
 // ---------------------------------------------------------------- corpus check

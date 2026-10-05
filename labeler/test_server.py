@@ -21,6 +21,9 @@ class ServerTest(unittest.TestCase):
         (state / "compression").mkdir(parents=True)
         (state / "document.html").write_text("<script>alert(1)</script>")
         (state / "ax.json").write_text("{}")
+        (state / "compression/document-00000.source-map.json").write_text(json.dumps([
+            {"id": "0", "tag": "html", "parent": None}, {"id": "1", "tag": "body", "parent": "0"},
+            {"id": "2", "tag": "p", "parent": "1"}]))
         (root / "corpus/queue.json").write_text('{"groups": {}}')
         (root / "labels").mkdir()
         (root / "labels/x.json").write_text(json.dumps({"page": f"{SITE}/{PAGE}", "provenance": {"status": "submitted"}}))
@@ -72,6 +75,41 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(self.request("POST", "/api/corpus-check", bad, {"Content-Type": "application/json"})[0], 400)
         self.assertEqual(self.request("POST", "/api/corpus-check", report,
                                       {"Content-Type": "application/json", "Sec-Fetch-Site": "cross-site"})[0], 403)
+
+    def post(self, path, payload, headers=None):
+        return self.request("POST", path, json.dumps(payload), {"Content-Type": "application/json", **(headers or {})})
+
+    def label(self, status, refs=("src-2",)):
+        return {"page": f"{SITE}/{PAGE}", "rootId": "page", "provenance": {"status": status}, "nodes": [
+            {"id": "page", "kind": "group", "label": "Page", "children": ["u"], "sourceRefs": []},
+            {"id": "u", "kind": "dom", "label": "Para", "children": [], "sourceRefs": list(refs)}]}
+
+    def test_draft_save_and_load(self):
+        status, _, _ = self.post("/api/labels", self.label("draft", refs=("src-missing",)))
+        self.assertEqual(status, 200, "drafts are saved even when invalid")
+        status, _, body = self.request("GET", f"/api/labels/{SITE}/{PAGE}")
+        saved = json.loads(body)
+        self.assertEqual((status, saved["provenance"]["status"]), (200, "draft"))
+        self.assertIn("labeler", saved["provenance"])
+        self.assertEqual(self.request("GET", "/api/labels/../x")[0], 400)
+
+    def test_submit_is_validated_against_the_source_map(self):
+        status, _, body = self.post("/api/labels", self.label("submitted", refs=("src-missing",)))
+        self.assertEqual(status, 400)
+        self.assertIn("dangling", json.loads(body)["error"])
+        status, _, _ = self.post("/api/labels", self.label("submitted"))
+        self.assertEqual(status, 200)
+        saved = json.loads((Path(self.tmp.name) / f"labels/{SITE}__{PAGE}.json").read_text())
+        self.assertIn("submitted_at", saved["provenance"])
+        self.assertEqual(self.post("/api/labels", {**self.label("draft"), "page": "../../x"})[0], 400)
+
+    def test_export_writes_a_valid_dataset(self):
+        dom = {"roots": ["src-0"], "nodes": [{"id": "src-0", "parent": None, "children": ["src-2"]},
+                                              {"id": "src-2", "parent": "src-0", "children": []}]}
+        dataset = {"id": f"label-{PAGE}", "dom": dom, "variants": {"gold": self.label("submitted")}}
+        self.assertEqual(self.post("/api/export", dataset)[0], 200)
+        self.assertTrue((Path(self.tmp.name) / f"labels/datasets/label-{PAGE}.json").exists())
+        self.assertEqual(self.post("/api/export", {**dataset, "id": "../x"})[0], 400)
 
 
 if __name__ == "__main__":

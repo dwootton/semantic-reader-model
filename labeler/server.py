@@ -6,9 +6,14 @@ Routes:
   GET  /corpus/queue.json                  page order (labeler/queue_order.py)
   GET  /corpus/pages/<site>/<page>/<file>  one of the six desktop capture files
   GET  /api/labels                         {page: status} for label files in runs/labels/
+  GET  /api/labels/<site>/<page>           one saved label
+  POST /api/labels                         save a draft, or submit (validated against the page's source map)
+  POST /api/export                         write an inspector dataset to runs/labels/datasets/
   POST /api/corpus-check                   writes runs/corpus/excluded.json from the in-browser check
 """
 import argparse
+from datetime import datetime, timezone
+import getpass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
@@ -20,12 +25,15 @@ APP = Path(__file__).resolve().parent
 ROOT = APP.parent
 sys.path.insert(0, str(APP))
 from queue_order import CAPTURE_FILES, STATE  # noqa: E402
+sys.path.insert(0, str(ROOT))
+from inspector.build_data import validate  # noqa: E402
 
 INSPECTOR_MODULES = {"model.mjs"}
 TYPES = {".html": "text/html; charset=utf-8", ".mjs": "text/javascript; charset=utf-8",
          ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8"}
 PAGE_FILE = re.compile(r"/corpus/pages/([0-9a-f]{24})/([0-9a-f]{24})/(.+)")
-MAX_POST = 4 << 20
+PAGE_ID = re.compile(r"[0-9a-f]{24}/[0-9a-f]{24}")
+MAX_POST = 32 << 20  # an exported dataset carries the page's whole raw DOM
 
 
 class Server(ThreadingHTTPServer):
@@ -92,6 +100,12 @@ class Handler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         if path == "/api/labels":
             return self._json(200, self.label_status())
+        if path.startswith("/api/labels/"):
+            try:
+                label = self.label_path(path.removeprefix("/api/labels/"))
+                return self._file(label) if label.exists() else self._json(200, None)  # no label yet
+            except ValueError as error:
+                return self._json(400, {"error": str(error)})
         target = self.resolve(path)
         if target is None:
             return self._json(404, {"error": "Not found."})
@@ -101,7 +115,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self._allowed(mutation=True):
             return self._json(403, {"error": "Same-origin loopback access is required."})
-        if urlsplit(self.path).path != "/api/corpus-check":
+        routes = {"/api/corpus-check": self.save_check, "/api/labels": self.save_label, "/api/export": self.save_export}
+        handler = routes.get(urlsplit(self.path).path)
+        if handler is None:
             return self._json(404, {"error": "Unknown endpoint."})
         if self.headers.get("Content-Type", "").split(";", 1)[0] != "application/json":
             return self._json(415, {"error": "Use application/json."})
@@ -109,15 +125,67 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0"))
             if not 0 < length <= MAX_POST:
                 raise ValueError("Body too large.")
-            report = json.loads(self.rfile.read(length))
-            pages = report["pages"]
-            if not isinstance(pages, list) or not all(
-                    isinstance(p, dict) and re.fullmatch(r"[0-9a-f]{24}/[0-9a-f]{24}", str(p.get("page"))) for p in pages):
-                raise ValueError("pages must be a list of {page, error}.")
-        except (ValueError, KeyError, TypeError) as error:
-            return self._json(400, {"error": str(error)[:300]})
+            body = json.loads(self.rfile.read(length))
+            if not isinstance(body, dict):
+                raise ValueError("Expected a JSON object.")
+            status, payload = handler(body)
+        except (ValueError, KeyError, TypeError, AssertionError) as error:
+            return self._json(400, {"error": str(error)[:500]})
+        self._json(status, payload)
+
+    def save_check(self, report):
+        pages = report["pages"]
+        if not isinstance(pages, list) or not all(isinstance(p, dict) and PAGE_ID.fullmatch(str(p.get("page"))) for p in pages):
+            raise ValueError("pages must be a list of {page, error}.")
         (self.corpus / "excluded.json").write_text(json.dumps(report, indent=1))
-        self._json(200, {"excluded": len(pages)})
+        return 200, {"excluded": len(pages)}
+
+    def label_path(self, page):
+        if not PAGE_ID.fullmatch(str(page)):
+            raise ValueError("Unknown page id.")
+        return self.labels / (page.replace("/", "__") + ".json")
+
+    def page_dom(self, page):
+        """A minimal raw DOM rebuilt from the page's source map, enough for validate() to check references."""
+        site, page_id = page.split("/")
+        source_map = json.loads((self.corpus / "public-research-v1/captures" / site / page_id / STATE /
+                                 "compression/document-00000.source-map.json").read_text())
+        nodes = {e["id"]: {"id": f"src-{e['id']}", "parent": None if e["parent"] is None else f"src-{e['parent']}",
+                           "children": []} for e in source_map}
+        for e in source_map:
+            if e["parent"] is not None:
+                nodes[e["parent"]]["children"].append(f"src-{e['id']}")
+        listed = list(nodes.values())
+        return {"roots": [n["id"] for n in listed if n["parent"] is None], "nodes": listed}
+
+    def save_label(self, label):
+        path = self.label_path(label["page"])
+        provenance = label.setdefault("provenance", {})
+        if provenance.get("status") not in {"draft", "submitted"}:
+            raise ValueError("status must be draft or submitted.")
+        if not isinstance(label.get("nodes"), list) or not isinstance(label.get("rootId"), str):
+            raise ValueError("A label needs rootId and nodes.")
+        if provenance["status"] == "submitted":
+            validate({"dom": self.page_dom(label["page"]), "variants": {"label": label}})
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        previous = json.loads(path.read_text()).get("provenance", {}) if path.exists() else {}
+        provenance.update(labeler=getpass.getuser(), started_at=previous.get("started_at", now), saved_at=now)
+        if provenance["status"] == "submitted":
+            provenance["submitted_at"] = now
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(label, ensure_ascii=False, indent=1))
+        temporary.replace(path)
+        return 200, {"status": provenance["status"], "saved_at": now}
+
+    def save_export(self, dataset):
+        if not re.fullmatch(r"label-[0-9a-f]{24}", str(dataset.get("id"))):
+            raise ValueError("Unexpected dataset id.")
+        validate(dataset)
+        path = self.labels / "datasets" / f"{dataset['id']}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(dataset, ensure_ascii=False, separators=(",", ":")))
+        return 200, {"path": str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path)}
 
     def label_status(self):
         status = {}

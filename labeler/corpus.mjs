@@ -77,12 +77,14 @@ const srcId = index => `src-${Number(index).toString(36)}`;
 export function buildPage({ page, capture, environment, elements, sourceMap, geometry, compact }) {
   checkSourceMap(elements, sourceMap);
   const nIndex = collectorIds(elements);
-  const rects = new Map();
+  const rects = new Map(), styles = new Map();
   for (const row of geometry.elements_and_text || []) {
     const index = nIndex.get(row.dom_id);
     if (index !== undefined && row.bounds) {
       const [x, y, width, height] = row.bounds;
       rects.set(index, { x, y, width, height });
+      const size = parseFloat(row.styles?.['font-size']);
+      if (size) styles.set(index, { fontSize: size, bold: Number(row.styles['font-weight']) >= 600 });
     }
   }
   const raw = elements.map(e => {
@@ -91,6 +93,7 @@ export function buildPage({ page, capture, environment, elements, sourceMap, geo
       tag: e.tag, text: e.text, ownText: e.ownText, textTruncated: e.textTruncated, attributes: e.attributes, hidden: e.hidden,
       compact: { disposition: entry.disposition, representedBy: entry.representedBy == null ? null : `src-${entry.representedBy}` } };
     if (rects.has(e.index)) node.rect = rects.get(e.index);
+    if (styles.has(e.index)) node.style = styles.get(e.index);
     return node;
   });
   const byRef = new Map(sourceMap.map(entry => [entry.id, entry]));
@@ -105,6 +108,7 @@ export function buildPage({ page, capture, environment, elements, sourceMap, geo
   for (const n of compactNodes) if (n.parent !== null) compactById.get(n.parent).children.push(n.id);
   return {
     page, url: capture.final_url, category: capture.record?.category || null, capturedAt: capture.captured_at,
+    documentSha256: capture.documents?.[0]?.sha256 || null,
     viewport: environment.viewport,
     raw: { roots: raw.filter(n => n.parent === null).map(n => n.id), nodes: raw },
     compact: { roots: compactNodes.filter(n => n.parent === null).map(n => n.id), nodes: compactNodes },
