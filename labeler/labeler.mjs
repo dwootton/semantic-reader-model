@@ -358,13 +358,27 @@ async function showPage(queue, page, groupName) {
     if (to) apply(() => M.moveTo(label, selection.ids, to));
   } });
   const button = (text, title, run, kind) => h('button', { type: 'button', title, 'data-kind': kind, onclick: run }, text);
+  // Select similar: the nodes it started from, the current level, and the scope containers it searched.
+  let similar = null;
+  const similarInfo = h('span', { class: 'muted similar-info' });
+  function runSimilar(level) {
+    const result = M.selectSimilar(ctx, similar.anchor, Math.max(1, level));
+    Object.assign(similar, { level: result.level, scopes: result.scopes });
+    choose('compact', result.ids, {}, 'similar');
+  }
   const compactButtons = [
     button('Add', 'Add the selected nodes to the target group as units (A)', () => placeSelection('add'), 'compact'),
     button('Add children', 'Add each child of the selection as its own unit (C)', () => placeSelection('children'), 'compact'),
     button('Group', 'Group the selection, named by the label box or else the first element’s text (G)', () => groupSelection(false), 'compact'),
     button('Group children', 'New group with each child as a unit (Shift+Enter in the label box)', () => groupSelection(true), 'compact'),
     button('One unit', 'Make the selected node one unit, merging any units inside it (U)', () => placeSelection('unit'), 'compact-one'),
-    button('Select similar', 'Select siblings shaped like the selection: same tag and child tags (e.g. the other cards)', () => choose('compact', M.selectSimilar(ctx, selection.ids)), 'compact'),
+    button('Select similar', 'Select nodes on the same tag path as the selection; − and + narrow or widen the scope', () => {
+      similar = { anchor: selection.ids, level: 1, scopes: [] };
+      runSimilar(1);
+    }, 'compact'),
+    button('−', 'Narrow the similar scope by one level', () => runSimilar(similar.level - 1), 'similar-less'),
+    button('+', 'Widen the similar scope by one level (siblings → cousins → second cousins)', () => runSimilar(similar.level + 1), 'similar'),
+    similarInfo,
     button('Select siblings', 'Select every sibling of the selection', () => choose('compact', M.selectSiblings(ctx, selection.ids)), 'compact'),
     button('Group each', 'One group per selected node, named from its first text, holding its children as units', () => {
       let made = [];
@@ -389,6 +403,7 @@ async function showPage(queue, page, groupName) {
   const targetLine = h('span', { class: 'target-line' });
   const undoButton = button('Undo', 'Undo (⌘Z)', () => undo());
   const redoButton = button('Redo', 'Redo (⇧⌘Z)', () => redo());
+  const deselectButton = button('Deselect', 'Clear the selection in every pane (Esc)', () => { selection = { pane: null, ids: [] }; similar = null; update(); });
   const submitButton = h('button', { type: 'button', class: 'primary', onclick: () => submit() }, 'Submit');
   const rawToggle = h('button', { type: 'button', onclick: () => { rawTree.element.hidden = !rawTree.element.hidden; layout(); } }, 'Raw DOM');
   const nav = (entry, text) => entry ? h('a', { href: pageHref(entry.page, group) }, text) : h('span', { class: 'muted' }, text);
@@ -401,7 +416,7 @@ async function showPage(queue, page, groupName) {
       h('span', { class: 'muted' }, model.category || ''),
       h('span', { class: 'muted' }, `${model.stats.elements} elements → ${model.stats.compactNodes} compressed`), rawToggle),
     h('div', { class: 'editbar' },
-      h('div', { class: 'editrow' }, targetLine, groupInput, undoButton, redoButton, statusLine, submitButton),
+      h('div', { class: 'editrow' }, targetLine, groupInput, undoButton, redoButton, deselectButton, statusLine, submitButton),
       h('div', { class: 'editrow' }, h('span', { class: 'muted' }, 'Compressed:'), ...compactButtons,
         h('span', { class: 'muted sep' }, 'Tree:'), ...treeButtons)),
     panes);
@@ -425,6 +440,7 @@ async function showPage(queue, page, groupName) {
     if (how.add && !how.range) next = ids.every(id => current.includes(id)) ? current.filter(id => !ids.includes(id)) : [...new Set([...current, ...ids])];
     else if (how.range) next = [...new Set([...current, ...ids])];
     selection = { pane, ids: next };
+    if (from !== 'similar') similar = null;
     // The last tree node clicked sets where Add / Group put things: that group, or the unit's group.
     if (pane === 'semantic' && ids.length) {
       const last = label.nodes[ids[ids.length - 1]];
@@ -584,20 +600,23 @@ async function showPage(queue, page, groupName) {
     compactTree.setData(visible.map(n => ({ ...n, children: n.children.filter(c => keep.has(c)) })),
       model.compact.roots.filter(r => keep.has(r)));
     const relatedCompact = selection.pane === 'semantic' ? selection.ids.filter(id => label.nodes[id]).flatMap(leavesUnder) : [];
-    compactTree.setSelection(selection.pane === 'compact' ? selection.ids : [], relatedCompact);
+    compactTree.setSelection(selection.pane === 'compact' ? selection.ids : [], similar ? similar.scopes : relatedCompact);
     semanticTree.setData(Object.values(label.nodes), [label.rootId]);
     const containing = selection.pane === 'compact' ? selection.ids.map(id => unitFor(id)).filter(Boolean) : [];
     semanticTree.setSelection(selection.pane === 'semantic' ? selection.ids : [], containing);
-    wire.update(placementMap, selection.pane === 'compact' ? selection.ids : relatedCompact);
+    wire.update(placementMap, selection.pane === 'compact' ? selection.ids : relatedCompact, similar ? similar.scopes : []);
+    similarInfo.textContent = similar ? `${similar.level} level${similar.level > 1 ? 's' : ''} up · ${selection.ids.length} node${selection.ids.length === 1 ? '' : 's'}` : '';
 
     const groups = Object.values(label.nodes).filter(n => n.kind === 'group');
     moveSelect.replaceChildren(h('option', { value: '' }, 'Move to…'), ...groups.map(g => h('option', { value: g.id }, g.label)));
     for (const b of [...compactButtons, ...treeButtons]) {
       const kind = b.dataset.kind;
       b.disabled = !selection.ids.length || (kind?.startsWith('compact') && selection.pane !== 'compact') || (kind?.startsWith('tree') && selection.pane !== 'semantic')
-        || (kind === 'compact-one' && selection.ids.length !== 1);
+        || (kind === 'compact-one' && selection.ids.length !== 1) || (kind?.startsWith('similar') && !similar)
+        || (kind === 'similar-less' && similar?.level <= 1);
     }
     undoButton.disabled = !undoStack.length;
+    deselectButton.disabled = !selection.ids.length;
     redoButton.disabled = !redoStack.length;
     const path = [];
     const parentMap = M.parents(label);
@@ -735,11 +754,11 @@ async function showPage(queue, page, groupName) {
     });
     return {
       element,
-      update(placements, highlighted) {
-        const lit = new Set(highlighted);
+      update(placements, highlighted, scopes = []) {
+        const lit = new Set(highlighted), scoped = new Set(scopes);
         for (const [id, el] of els) {
           const state = placements.get(id);
-          el.className = `box${state ? ` ${state}` : ''}${lit.has(id) ? ' selected' : ''}`;
+          el.className = `box${state ? ` ${state}` : ''}${lit.has(id) ? ' selected' : ''}${scoped.has(id) ? ' scope' : ''}`;
         }
       },
       scrollTo(id) {

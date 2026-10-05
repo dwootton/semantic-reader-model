@@ -163,12 +163,27 @@ test('select siblings and similar siblings, then one group per card', () => {
   const m = { page: 's/q', url: 'u', compact: { roots: ['t', 'b'], nodes: cards.map(mk) }, raw: { roots: ['t', 'b'], nodes: cards.map(s => ({ ...mk(s), text: s[3] })) } };
   const c = L.pageIndex(m);
   assert.deepEqual(L.selectSiblings(c, ['c1']), ['c1', 'c2', 'ad']);
-  assert.deepEqual(L.selectSimilar(c, ['c1']), ['c1', 'c2']);
+  assert.deepEqual(L.selectSimilar(c, ['c1']).ids, ['c1', 'c2']);
   const label = L.newLabel(c);
-  const groups = L.groupEach(label, c, L.selectSimilar(c, ['c2']), 'page');
+  const groups = L.groupEach(label, c, L.selectSimilar(c, ['c2']).ids, 'page');
   assert.deepEqual(groups.map(g => label.nodes[g].label), ['First', 'Second']);
   assert.deepEqual(label.nodes[groups[0]].children, ['leaf-c1h', 'leaf-c1a']);
   assert.deepEqual(label.nodes.page.children, groups);
   const solo = L.groupEach(label, c, ['ad'], 'page');
   assert.deepEqual(label.nodes[solo[0]].children, ['leaf-ad'], 'a node without children becomes its own unit');
+});
+
+test('select similar widens from siblings to cousins along the same tag path', () => {
+  // body > (div#d1 > p > strong, strong ; p > strong ; ul > li > strong), div#d2 > p > strong
+  const spec2 = [['t', null, 'title', 'T'], ['b', null, 'body', ''],
+    ['d1', 'b', 'div', ''], ['p1', 'd1', 'p', ''], ['s1', 'p1', 'strong', 'A'], ['s2', 'p1', 'strong', 'B'],
+    ['p2', 'd1', 'p', ''], ['s3', 'p2', 'strong', 'C'], ['u', 'd1', 'ul', ''], ['li', 'u', 'li', ''], ['s4', 'li', 'strong', 'D'],
+    ['d2', 'b', 'div', ''], ['p3', 'd2', 'p', ''], ['s5', 'p3', 'strong', 'E']];
+  const mk = ([id, parent, tag, ownText]) => ({ id, parent, tag, ownText, attributes: {}, children: spec2.filter(s => s[1] === id).map(s => s[0]) });
+  const m = { page: 's/r', url: 'u', compact: { roots: ['t', 'b'], nodes: spec2.map(mk) }, raw: { roots: ['t', 'b'], nodes: spec2.map(s => ({ ...mk(s), text: s[3] })) } };
+  const c = L.pageIndex(m);
+  assert.deepEqual(L.selectSimilar(c, ['s1'], 1), { ids: ['s1', 's2'], scopes: ['p1'], level: 1 });
+  assert.deepEqual(L.selectSimilar(c, ['s1'], 2), { ids: ['s1', 's2', 's3'], scopes: ['d1'], level: 2 }, 'cousins in other <p>s, not the <li>');
+  assert.deepEqual(L.selectSimilar(c, ['s1'], 3).ids, ['s1', 's2', 's3', 's5'], 'second cousins in the next div');
+  assert.equal(L.selectSimilar(c, ['s1'], 9).level, 4, 'stops at the page root');
 });

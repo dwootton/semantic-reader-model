@@ -202,17 +202,34 @@ function siblingIds(ctx, id) {
   const parent = ctx.byId.get(id).parent;
   return parent ? ctx.byId.get(parent).children : ctx.model.compact.roots;
 }
-// Shape of a node: its tag and its children's tags, so cards built the same way match.
-const shape = (ctx, id) => { const n = ctx.byId.get(id); return `${n.tag}>${n.children.map(c => ctx.byId.get(c).tag).join(',')}`; };
-
 /** Every sibling of each node (including the nodes), in document order. */
 export function selectSiblings(ctx, ids) {
   return [...new Set(ids.flatMap(id => siblingIds(ctx, id)))].sort(byOrder(ctx));
 }
 
-/** Siblings shaped like each node: same tag and the same child tags, e.g. the other cards of a card list. */
-export function selectSimilar(ctx, ids) {
-  return [...new Set(ids.flatMap(id => siblingIds(ctx, id).filter(s => shape(ctx, s) === shape(ctx, id))))].sort(byOrder(ctx));
+/**
+ * Nodes like the selection within a scope `level` ancestors up: everything under that scope reached by the
+ * same tag path. Level 1 is same-tag siblings; level 2 adds cousins (e.g. every <strong> in each <p> of a <div>).
+ * Returns { ids, scopes, level }, where level is the widest actually reached (it stops at the page root).
+ */
+export function selectSimilar(ctx, ids, level = 1) {
+  const found = new Set(), scopes = new Set();
+  let reached = level;
+  const kids = id => (id === null ? ctx.model.compact.roots : ctx.byId.get(id).children);
+  for (const id of ids) {
+    const path = [];
+    let scope = id;
+    for (let i = 0; i < level && scope !== null; i++) {
+      path.unshift(ctx.byId.get(scope).tag);
+      scope = ctx.byId.get(scope).parent ?? null;
+      if (scope === null) reached = Math.min(reached, i + 1);
+    }
+    if (scope !== null) scopes.add(scope);
+    let frontier = [scope];
+    for (const tag of path) frontier = frontier.flatMap(f => kids(f).filter(c => ctx.byId.get(c).tag === tag));
+    frontier.forEach(f => found.add(f));
+  }
+  return { ids: [...found].sort(byOrder(ctx)), scopes: [...scopes], level: reached };
 }
 
 // The first text inside a node, in document order (a card's title, usually).

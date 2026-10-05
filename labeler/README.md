@@ -22,7 +22,7 @@ Panes: **Compressed DOM** (what you label from), **Semantic tree** (what you bui
    - **Add children** (C): each child becomes its own unit (a list's items, say).
    - **Group** (G): a new group holding the selection, named after the first selected element's text (so select a heading plus its content and press G). Type a label in the box first to name it yourself; Shift+Enter there groups the children instead.
    - **One unit** (U): one unit, merging any units already inside it.
-   - **Select similar** / **Select siblings**: from one node, select its siblings with the same shape (same tag and child tags, e.g. all cards in a list), or all its siblings; then use any action on them.
+   - **Select similar**, then **−** / **+**: nodes on the same tag path as the selection within a scope that many levels up. Level 1 is same-tag siblings; level 2 adds cousins (every `<strong>` in each `<p>` of the same `<div>`); and so on up to the page. The scope container is outlined on the wireframe and highlighted in the tree. **Select siblings** selects every sibling, any tag.
    - **Group each**: one group per selected node, named from its first text, with its children as units (ten cards → ten titled groups).
    - **Skip** (S): not content (decorative, ad, hidden), with a reason.
    Placing a node that sits inside an existing unit splits that unit down to it, so you can start coarse (whole header) and refine.
