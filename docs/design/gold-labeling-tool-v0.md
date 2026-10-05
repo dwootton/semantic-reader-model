@@ -188,9 +188,11 @@ These labels are a precursor to deciding what a good tree is, so the tool impose
 | 0. Data ✅ | `.corpus.json`, `scripts/fetch_corpus.py`: downloads the main package, checks every shard and file SHA-256, unpacks only the labeler's files into `runs/corpus/` (2.2 GB, 39,773 files), lists the 285 Pro pages; `--verify` re-checks offline | Done 2026-10-04 |
 | 1. Loader + queue ✅ | `labeler/`: `queue_order.py` (one page per site first, round-robin by category), `server.py`, in-browser `corpus.mjs` (ports the SFT-109 builder's DOM join), page picker and read-only page view; corpus check | Any queued page opens with raw DOM ↔ compressed tree linking |
 | 2. Manual editor ✅ | `labeler/index.html` editable: three panes, multi-select (tree, search, wireframe rectangle), group / label / move / unwrap / merge / one reading unit / skip, coverage list, undo/redo, local autosave, Submit with `validate()` via POST to `labeler/server.py` | A main page can be labeled end to end, and the output imports into the inspector |
-| 3. Shared labels | Claims and submissions in the bucket, queue hides taken pages, claim expiry | Two labelers on two machines never get the same page |
-| 4. Speedups | Repeat structure across sibling cards; extra checks (leaf text, region containment, overlap); zoom preview | Labeling time per page measurably drops |
+| 3. Editor speedups | Select similar (siblings with the same tag and child tags) and Select siblings, Group each (one titled group per selected node, children as units); units keep their DOM text and are not renamable | Ten cards become ten titled groups in a few clicks |
+| 4. Shared labels | Claims and submissions in the bucket, queue hides taken pages, claim expiry, HF username as labeler | Two labelers on two machines never get the same page |
 | 5. LLM edits | Ollama draft and instruction edits, shown as diffs; silver drafts opt-in | A description produces a valid, accepted edit |
+
+Phases 3 and 4 were swapped on 2026-10-04 so the editor is settled before anything is built around it. A whole-label checker (unit text matches DOM text, regions, reading order) can run later as a standalone script over submitted labels; it is not built into the editor.
 
 Not planned: real screenshots for the 12 vision-study sites, and paid cloud models. The queue has two groups, main and pro.
 

@@ -198,6 +198,45 @@ export function makeUnit(label, ctx, compactId, targetId) {
   label.nodes[parent].children.splice(position, 0, leafId);
 }
 
+function siblingIds(ctx, id) {
+  const parent = ctx.byId.get(id).parent;
+  return parent ? ctx.byId.get(parent).children : ctx.model.compact.roots;
+}
+// Shape of a node: its tag and its children's tags, so cards built the same way match.
+const shape = (ctx, id) => { const n = ctx.byId.get(id); return `${n.tag}>${n.children.map(c => ctx.byId.get(c).tag).join(',')}`; };
+
+/** Every sibling of each node (including the nodes), in document order. */
+export function selectSiblings(ctx, ids) {
+  return [...new Set(ids.flatMap(id => siblingIds(ctx, id)))].sort(byOrder(ctx));
+}
+
+/** Siblings shaped like each node: same tag and the same child tags, e.g. the other cards of a card list. */
+export function selectSimilar(ctx, ids) {
+  return [...new Set(ids.flatMap(id => siblingIds(ctx, id).filter(s => shape(ctx, s) === shape(ctx, id))))].sort(byOrder(ctx));
+}
+
+// The first text inside a node, in document order (a card's title, usually).
+function firstText(ctx, id) {
+  const n = ctx.byId.get(id);
+  if (n.ownText) return n.ownText;
+  for (const c of n.children) { const t = firstText(ctx, c); if (t) return t; }
+  return '';
+}
+
+/** One group per selected node, named from its first text, holding its children as units (or itself, if it has none). */
+export function groupEach(label, ctx, compactIds, targetId) {
+  const ids = outermost(ctx, [...new Set(compactIds)]).sort(byOrder(ctx));
+  if (!ids.length) throw new Error('Select compressed nodes first.');
+  return ids.map(id => {
+    const kids = ctx.byId.get(id).children.filter(ctx.hasContent);
+    const g = createGroup(label, targetId, (firstText(ctx, id) || unitText(ctx, id)).slice(0, 120));
+    if (kids.length) addChildren(label, ctx, [id], g); else addLeaves(label, ctx, [id], g);
+    detach(label, g);
+    insertSorted(label, ctx, targetId, g);
+    return g;
+  });
+}
+
 export function createGroup(label, parentId, text, index = null) {
   group(label, parentId);
   const id = `g${label.next++}`;

@@ -152,3 +152,23 @@ test('skip all skips unplaced content but never covers a placed unit', () => {
   assert.ok('a2' in label.skipped && 'logo' in label.skipped && 'ul' in label.skipped === false);
   assert.deepEqual(L.validateLabel(label, ctx).errors, []);
 });
+
+test('select siblings and similar siblings, then one group per card', () => {
+  // body > list > (card, card, ad); card = h3 + a; ad = div with text
+  const cards = [['t', null, 'title', 'T'], ['b', null, 'body', ''], ['list', 'b', 'div', ''],
+    ['c1', 'list', 'article', ''], ['c1h', 'c1', 'h3', 'First'], ['c1a', 'c1', 'a', 'Read'],
+    ['c2', 'list', 'article', ''], ['c2h', 'c2', 'h3', 'Second'], ['c2a', 'c2', 'a', 'Read'],
+    ['ad', 'list', 'div', 'Sponsored']];
+  const mk = ([id, parent, tag, ownText]) => ({ id, parent, tag, ownText, attributes: {}, children: cards.filter(s => s[1] === id).map(s => s[0]) });
+  const m = { page: 's/q', url: 'u', compact: { roots: ['t', 'b'], nodes: cards.map(mk) }, raw: { roots: ['t', 'b'], nodes: cards.map(s => ({ ...mk(s), text: s[3] })) } };
+  const c = L.pageIndex(m);
+  assert.deepEqual(L.selectSiblings(c, ['c1']), ['c1', 'c2', 'ad']);
+  assert.deepEqual(L.selectSimilar(c, ['c1']), ['c1', 'c2']);
+  const label = L.newLabel(c);
+  const groups = L.groupEach(label, c, L.selectSimilar(c, ['c2']), 'page');
+  assert.deepEqual(groups.map(g => label.nodes[g].label), ['First', 'Second']);
+  assert.deepEqual(label.nodes[groups[0]].children, ['leaf-c1h', 'leaf-c1a']);
+  assert.deepEqual(label.nodes.page.children, groups);
+  const solo = L.groupEach(label, c, ['ad'], 'page');
+  assert.deepEqual(label.nodes[solo[0]].children, ['leaf-ad'], 'a node without children becomes its own unit');
+});

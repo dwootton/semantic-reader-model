@@ -107,7 +107,8 @@ let dragging = null;
 // `drop`: { accepts(fromPane), inside(node) → may drop into it, onDrop(payload, { id, zone }) } where zone is
 // 'before' | 'inside' | 'after', or 'end' for the empty area below the rows.
 function createTree({ title, pane, label = shortText, tagOf = n => `<${n.tag}>`, extras = () => [], rowClass = () => '',
-  onPick, onRename = null, drop = null, rowAction = null, onAction = () => {}, toggleOnClick = () => false, controls = [] }) {
+  onPick, onRename = null, drop = null, rowAction = null, onAction = () => {}, toggleOnClick = () => false,
+  startExpanded = false, renamable = () => true, controls = [] }) {
   let byId = new Map(), roots = [], query = '', selected = new Set(), related = new Set(), focusId = null, anchor = null, order = [];
   let editing = null, dropAt = null;
   const expanded = new Set();
@@ -157,7 +158,7 @@ function createTree({ title, pane, label = shortText, tagOf = n => `<${n.tag}>`,
     return input;
   }
   function startRename(id) {
-    if (!onRename || !byId.has(id)) return;
+    if (!onRename || !byId.has(id) || !renamable(byId.get(id))) return;
     editing = id;
     render();
     container.querySelector('.rename')?.select();
@@ -253,12 +254,21 @@ function createTree({ title, pane, label = shortText, tagOf = n => `<${n.tag}>`,
       byId = new Map(nodes.map(n => [n.id, { ...n }]));
       for (const n of byId.values()) for (const c of n.children) if (byId.has(c)) byId.get(c).parent = n.id;
       roots = newRoots.filter(r => byId.has(r));
-      if (!expanded.size) roots.forEach(r => { expanded.add(r); byId.get(r).children.forEach(c => expanded.add(c)); });
+      if (!expanded.size) {
+        if (startExpanded) for (const n of byId.values()) { if (n.children.length) expanded.add(n.id); }
+        else roots.forEach(r => { expanded.add(r); byId.get(r).children.forEach(c => expanded.add(c)); });
+      }
       count.textContent = `· ${byId.size}`;
       render();
     },
     setSelection(ids, relatedIds = []) { selected = new Set(ids); related = new Set(relatedIds); render(); },
     expand(id) { expanded.add(id); },
+    // Open every node, or close everything below the roots.
+    setAllExpanded(open) {
+      expanded.clear();
+      for (const n of byId.values()) if (open ? n.children.length : roots.includes(n.id)) expanded.add(n.id);
+      render();
+    },
     reveal, render,
     matching() {
       const term = query.trim().toLowerCase();
@@ -298,7 +308,13 @@ async function showPage(queue, page, groupName) {
   const hideBox = h('label', { class: 'check' }, h('input', { type: 'checkbox', onchange: event => { hidePlaced = event.target.checked; update(); } }), ' Hide placed');
   const selectMatches = h('button', { type: 'button', title: 'Select every node matching the search',
     onclick: () => { const ids = compactTree.matching(); if (ids.length) choose('compact', ids); else say('Type a search first.', true); } }, 'Select matches');
-  const compactTree = createTree({ title: 'Compressed DOM', pane: 'compact', controls: [selectMatches, hideBox],
+  let compactOpen = true;
+  const expandToggle = h('button', { type: 'button', title: 'Expand or collapse the whole compressed DOM', onclick: () => {
+    compactOpen = !compactOpen;
+    compactTree.setAllExpanded(compactOpen);
+    expandToggle.textContent = compactOpen ? 'Collapse all' : 'Expand all';
+  } }, 'Collapse all');
+  const compactTree = createTree({ title: 'Compressed DOM', pane: 'compact', controls: [selectMatches, expandToggle, hideBox], startExpanded: true,
     // Dropping tree nodes back onto the compressed DOM removes them from the tree.
     drop: { accepts: from => from === 'semantic', inside: () => false,
       onDrop: payload => apply(() => { M.remove(label, payload.ids); selection = { pane: null, ids: [] }; }) },
@@ -309,6 +325,7 @@ async function showPage(queue, page, groupName) {
   const semanticTree = createTree({ title: 'Semantic tree', pane: 'semantic',
     onRename: (id, text) => apply(() => M.setField(label, id, 'label', text)),
     toggleOnClick: n => n.kind === 'group',
+    renamable: n => n.kind === 'group', // units keep their DOM text
     rowAction: n => ({ note: Boolean(n.summary?.trim() || n.notes?.trim() || (n.id === label.rootId && label.notes?.trim())) }),
     onAction: id => { detailFor = detailFor === id ? null : id; update(); },
     drop: { accepts: from => from === 'compact' || from === 'semantic', inside: n => n.kind === 'group', onDrop: dropOnTree },
@@ -347,6 +364,13 @@ async function showPage(queue, page, groupName) {
     button('Group', 'Group the selection, named by the label box or else the first element’s text (G)', () => groupSelection(false), 'compact'),
     button('Group children', 'New group with each child as a unit (Shift+Enter in the label box)', () => groupSelection(true), 'compact'),
     button('One unit', 'Make the selected node one unit, merging any units inside it (U)', () => placeSelection('unit'), 'compact-one'),
+    button('Select similar', 'Select siblings shaped like the selection: same tag and child tags (e.g. the other cards)', () => choose('compact', M.selectSimilar(ctx, selection.ids)), 'compact'),
+    button('Select siblings', 'Select every sibling of the selection', () => choose('compact', M.selectSiblings(ctx, selection.ids)), 'compact'),
+    button('Group each', 'One group per selected node, named from its first text, holding its children as units', () => {
+      let made = [];
+      apply(() => { made = M.groupEach(label, ctx, selection.ids, target); });
+      if (made.length) { made.forEach(id => semanticTree.expand(id)); selection = { pane: 'semantic', ids: made }; update(); }
+    }, 'compact'),
     button('Skip', 'Mark as not content, with a reason (S)', () => skipSelection(), 'compact'),
     button('Unskip', 'Remove the skip', () => apply(() => M.unskip(label, selection.ids)), 'compact'),
   ];
