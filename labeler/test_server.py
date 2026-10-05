@@ -64,7 +64,8 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(self.request("GET", "/", headers={"Origin": "http://evil.example"})[0], 403)
 
     def test_label_status(self):
-        self.assertEqual(json.loads(self.request("GET", "/api/labels")[2]), {f"{SITE}/{PAGE}": "submitted"})
+        # An old "submitted" label reads as complete.
+        self.assertEqual(json.loads(self.request("GET", "/api/labels")[2]), {f"{SITE}/{PAGE}": "complete"})
 
     def test_corpus_check_report(self):
         report = json.dumps({"checked": 2, "pages": [{"page": f"{SITE}/{PAGE}", "error": "count"}]})
@@ -84,29 +85,31 @@ class ServerTest(unittest.TestCase):
             {"id": "page", "kind": "group", "label": "Page", "children": ["u"], "sourceRefs": []},
             {"id": "u", "kind": "dom", "label": "Para", "children": [], "sourceRefs": list(refs)}]}
 
-    def test_draft_save_and_load(self):
-        status, _, _ = self.post("/api/labels", self.label("draft", refs=("src-missing",)))
-        self.assertEqual(status, 200, "drafts are saved even when invalid")
+    def test_in_progress_save_and_load(self):
+        status, _, _ = self.post("/api/labels", self.label("in_progress", refs=("src-missing",)))
+        self.assertEqual(status, 200, "in-progress labels are saved even when invalid")
         status, _, body = self.request("GET", f"/api/labels/{SITE}/{PAGE}")
         saved = json.loads(body)
-        self.assertEqual((status, saved["provenance"]["status"]), (200, "draft"))
+        self.assertEqual((status, saved["provenance"]["status"]), (200, "in_progress"))
         self.assertIn("labeler", saved["provenance"])
         self.assertEqual(self.request("GET", "/api/labels/../x")[0], 400)
 
-    def test_submit_is_validated_against_the_source_map(self):
-        status, _, body = self.post("/api/labels", self.label("submitted", refs=("src-missing",)))
-        self.assertEqual(status, 400)
-        self.assertIn("dangling", json.loads(body)["error"])
-        status, _, _ = self.post("/api/labels", self.label("submitted"))
-        self.assertEqual(status, 200)
+    def test_complete_is_validated_against_the_source_map(self):
+        status, _, body = self.post("/api/labels", self.label("complete", refs=("src-missing",)))
+        result = json.loads(body)
+        self.assertEqual((status, result["status"]), (200, "in_progress"), "an invalid complete label is kept, as in progress")
+        self.assertIn("dangling", result["note"])
+        status, _, body = self.post("/api/labels", self.label("complete"))
+        self.assertEqual((status, json.loads(body)["status"]), (200, "complete"))
         saved = json.loads((Path(self.tmp.name) / f"labels/{SITE}__{PAGE}.json").read_text())
-        self.assertIn("submitted_at", saved["provenance"])
-        self.assertEqual(self.post("/api/labels", {**self.label("draft"), "page": "../../x"})[0], 400)
+        self.assertIn("completed_at", saved["provenance"])
+        self.assertEqual(self.post("/api/labels", {**self.label("in_progress"), "page": "../../x"})[0], 400)
+        self.assertEqual(self.post("/api/labels", self.label("submitted"))[0], 400)
 
     def test_export_writes_a_valid_dataset(self):
         dom = {"roots": ["src-0"], "nodes": [{"id": "src-0", "parent": None, "children": ["src-2"]},
                                               {"id": "src-2", "parent": "src-0", "children": []}]}
-        dataset = {"id": f"label-{PAGE}", "dom": dom, "variants": {"gold": self.label("submitted")}}
+        dataset = {"id": f"label-{PAGE}", "dom": dom, "variants": {"gold": self.label("complete")}}
         self.assertEqual(self.post("/api/export", dataset)[0], 200)
         self.assertTrue((Path(self.tmp.name) / f"labels/datasets/label-{PAGE}.json").exists())
         self.assertEqual(self.post("/api/export", {**dataset, "id": "../x"})[0], 400)

@@ -47,14 +47,16 @@ test('splitting in place keeps the units inside the same group and order', () =>
   assert.deepEqual(kids(label, header), ['leaf-a1', 'leaf-a2', 'leaf-logo']);
 });
 
-test('a container holding placed units is refused, and Make one unit merges them', () => {
+test('adding a container merges the units already placed inside it into one unit', () => {
   const label = L.newLabel(ctx);
   L.addChildren(label, ctx, ['ul'], 'page');
   assert.deepEqual(kids(label, 'page'), ['leaf-li1', 'leaf-li2', 'leaf-li3']);
-  assert.throws(() => L.addLeaves(label, ctx, ['m'], 'page'), /contains nodes already placed/);
-  L.makeUnit(label, ctx, 'ul', 'page');
-  assert.deepEqual(kids(label, 'page'), ['leaf-ul']);
+  L.skip(label, ctx, ['h1'], 'test');
+  L.addLeaves(label, ctx, ['m'], 'page');
+  assert.deepEqual(kids(label, 'page'), ['leaf-m']);
   assert.equal(label.nodes['leaf-li1'], undefined);
+  assert.ok(!('h1' in label.skipped), 'skips inside are merged too');
+  assert.deepEqual(L.validateLabel(label, ctx).errors, []);
 });
 
 test('semantic edits: group, move, indent, outdent, unwrap, merge, remove', () => {
@@ -92,7 +94,7 @@ test('skip covers a subtree, refuses placed content, and unskips', () => {
   const label = L.newLabel(ctx);
   L.skip(label, ctx, ['hd'], 'site chrome');
   assert.ok(!L.uncovered(label, ctx).includes('a1'));
-  assert.throws(() => L.addLeaves(label, ctx, ['a1'], 'page'), /skipped/);
+  assert.throws(() => L.addLeaves(label, ctx, ['a1'], 'page'), /ignored/);
   L.addLeaves(label, ctx, ['f'], 'page');
   assert.throws(() => L.skip(label, ctx, ['b'], 'x'), /overlaps a placed unit/);
   L.unskip(label, ['hd']);
@@ -164,13 +166,6 @@ test('select siblings and similar siblings, then one group per card', () => {
   const c = L.pageIndex(m);
   assert.deepEqual(L.selectSiblings(c, ['c1']), ['c1', 'c2', 'ad']);
   assert.deepEqual(L.selectSimilar(c, ['c1']).ids, ['c1', 'c2']);
-  const label = L.newLabel(c);
-  const groups = L.groupEach(label, c, L.selectSimilar(c, ['c2']).ids, 'page');
-  assert.deepEqual(groups.map(g => label.nodes[g].label), ['First', 'Second']);
-  assert.deepEqual(label.nodes[groups[0]].children, ['leaf-c1h', 'leaf-c1a']);
-  assert.deepEqual(label.nodes.page.children, groups);
-  const solo = L.groupEach(label, c, ['ad'], 'page');
-  assert.deepEqual(label.nodes[solo[0]].children, ['leaf-ad'], 'a node without children becomes its own unit');
 });
 
 test('select similar widens from siblings to cousins along the same tag path', () => {

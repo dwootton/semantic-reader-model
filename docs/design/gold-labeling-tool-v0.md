@@ -188,9 +188,13 @@ These labels are a precursor to deciding what a good tree is, so the tool impose
 | 0. Data ✅ | `.corpus.json`, `scripts/fetch_corpus.py`: downloads the main package, checks every shard and file SHA-256, unpacks only the labeler's files into `runs/corpus/` (2.2 GB, 39,773 files), lists the 285 Pro pages; `--verify` re-checks offline | Done 2026-10-04 |
 | 1. Loader + queue ✅ | `labeler/`: `queue_order.py` (one page per site first, round-robin by category), `server.py`, in-browser `corpus.mjs` (ports the SFT-109 builder's DOM join), page picker and read-only page view; corpus check | Any queued page opens with raw DOM ↔ compressed tree linking |
 | 2. Manual editor ✅ | `labeler/index.html` editable: three panes, multi-select (tree, search, wireframe rectangle), group / label / move / unwrap / merge / one reading unit / skip, coverage list, undo/redo, local autosave, Submit with `validate()` via POST to `labeler/server.py` | A main page can be labeled end to end, and the output imports into the inspector |
-| 3. Editor speedups | Select similar with a − / + scope level (same tag path under a scope n levels up: siblings, then cousins, …) and Select siblings, Group each (one titled group per selected node, children as units); units keep their DOM text and are not renamable | Ten cards become ten titled groups in a few clicks |
+| 3. Editor speedups | Select similar with a − / + scope level (same tag path under a scope n levels up: siblings, then cousins, …) and Select siblings; all grouping happens in the tree, the compressed row only places, selects and skips (Group each was tried and removed 2026-10-05); units keep their DOM text and are not renamable | Ten cards become ten titled groups in a few clicks |
 | 4. Shared labels | Claims and submissions in the bucket, queue hides taken pages, claim expiry, HF username as labeler | Two labelers on two machines never get the same page |
 | 5. LLM edits | Ollama draft and instruction edits, shown as diffs; silver drafts opt-in | A description produces a valid, accepted edit |
+
+**UI pass (2026-10-05).** Page bar: queue, previous/next, title, category, URL. Left 2/3: wireframe and compressed DOM side by side, one-way scroll sync (DOM drives wireframe), placement actions in its menu bar. Right 1/3: unplaced nodes above the semantic tree with its own menu bar. The raw DOM pane and Submit are gone: a page is **untouched**, **in progress** or **complete** (nothing unplaced, no errors), every edit autosaves, the server re-validates complete labels (keeping them in progress if that fails), and complete saves write the inspector dataset.
+
+Later on 2026-10-05: the wireframe lasso was replaced by drag-to-pan (click still selects, Alt-click the parent) plus a zoom menu and ⌘/Ctrl+scroll zoom; One unit was folded into Add (Add merges units already inside a node); Skip was renamed Ignore; Group each and Move to were removed.
 
 Phases 3 and 4 were swapped on 2026-10-04 so the editor is settled before anything is built around it. A whole-label checker (unit text matches DOM text, regions, reading order) can run later as a standalone script over submitted labels; it is not built into the editor.
 
@@ -243,7 +247,7 @@ Built in `labeler/`: `label-model.mjs` (every edit as a pure, tested operation),
 
 Decisions made while building:
 
-- **A unit covers its whole compressed subtree.** Placing a node inside an existing unit splits that unit down the path to it (siblings stay units), so labeling can go coarse to fine: place the whole header, then open its group and pull out the navigation. Placing a container that already holds units is refused; **One unit** merges them explicitly.
+- **A unit covers its whole compressed subtree.** Placing a node inside an existing unit splits that unit down the path to it (siblings stay units), so labeling can go coarse to fine: place the whole header, then open its group and pull out the navigation. Placing a container that already holds units merges them into it (decided 2026-10-05; Undo reverts it).
 - **New units and groups are inserted in document order** within their group; manual moves override that.
 - **Group `sourceRefs` stay empty** except the root, which references `<title>`; regions are carried by the units. `validate()` accepts this, and the inspector shows the tree with its links.
 - **Coverage** counts compressed nodes with direct text or an interactive or media tag that are neither inside a unit nor skipped.

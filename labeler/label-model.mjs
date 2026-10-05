@@ -147,7 +147,8 @@ function skippedBy(label, ctx, id) {
 }
 
 /**
- * Place compact nodes as reading units in a group. Existing units move; enclosing units are split.
+ * Place compact nodes as reading units in a group. Existing units move; enclosing units are split; units already
+ * inside a placed node are merged into it.
  * `before` (a child of the group, or null for the end) places them exactly; omitted, they go in document order.
  */
 export function addLeaves(label, ctx, compactIds, targetId, before) {
@@ -156,14 +157,14 @@ export function addLeaves(label, ctx, compactIds, targetId, before) {
   if (!ids.length) throw new Error('Select compressed nodes first.');
   for (const id of ids) {
     const skip = skippedBy(label, ctx, id);
-    if (skip && skip !== id) throw new Error(`<${ctx.byId.get(id).tag}> is inside a skipped node; unskip it first.`);
-    const leaves = leafMap(label);
-    if (!leaves.has(id) && [...leaves.keys()].some(ref => ref !== id && inside(ctx, ref, id))) {
-      throw new Error(`"${unitText(ctx, id).slice(0, 60)}" contains nodes already placed. Use "Make one unit" to merge them.`);
-    }
+    if (skip && skip !== id) throw new Error(`<${ctx.byId.get(id).tag}> is inside an ignored node; unignore it first.`);
   }
   for (const id of ids) {
-    delete label.skipped[id];
+    // The node becomes one unit for everything inside it: units and skips already inside it are merged into it.
+    for (const [ref, leafId] of leafMap(label)) {
+      if (ref !== id && inside(ctx, ref, id)) { detach(label, leafId); delete label.nodes[leafId]; }
+    }
+    for (const other of Object.keys(label.skipped)) if (inside(ctx, other, id)) delete label.skipped[other];
     const leaves = leafMap(label);
     const cover = coveringLeaf(ctx, leaves, id);
     const leafId = cover ? splitTo(label, ctx, cover, id) : makeLeaf(label, ctx, id);
@@ -182,20 +183,6 @@ export function addChildren(label, ctx, compactIds, targetId) {
   }
   if (!kids.length) throw new Error('The selection has no children with content.');
   addLeaves(label, ctx, kids, targetId);
-}
-
-/** Make one compact node a single reading unit, absorbing any units inside it. */
-export function makeUnit(label, ctx, compactId, targetId) {
-  const leaves = leafMap(label);
-  const absorbed = [...leaves.keys()].filter(ref => ref !== compactId && inside(ctx, ref, compactId)).sort(byOrder(ctx));
-  if (!absorbed.length) return addLeaves(label, ctx, [compactId], targetId);
-  const first = leaves.get(absorbed[0]);
-  const parent = parents(label).get(first);
-  const position = label.nodes[parent].children.indexOf(first);
-  for (const ref of absorbed) { detach(label, leaves.get(ref)); delete label.nodes[leaves.get(ref)]; }
-  for (const id of Object.keys(label.skipped)) if (inside(ctx, id, compactId)) delete label.skipped[id];
-  const leafId = leaves.has(compactId) ? leaves.get(compactId) : makeLeaf(label, ctx, compactId);
-  label.nodes[parent].children.splice(position, 0, leafId);
 }
 
 function siblingIds(ctx, id) {
@@ -230,28 +217,6 @@ export function selectSimilar(ctx, ids, level = 1) {
     frontier.forEach(f => found.add(f));
   }
   return { ids: [...found].sort(byOrder(ctx)), scopes: [...scopes], level: reached };
-}
-
-// The first text inside a node, in document order (a card's title, usually).
-function firstText(ctx, id) {
-  const n = ctx.byId.get(id);
-  if (n.ownText) return n.ownText;
-  for (const c of n.children) { const t = firstText(ctx, c); if (t) return t; }
-  return '';
-}
-
-/** One group per selected node, named from its first text, holding its children as units (or itself, if it has none). */
-export function groupEach(label, ctx, compactIds, targetId) {
-  const ids = outermost(ctx, [...new Set(compactIds)]).sort(byOrder(ctx));
-  if (!ids.length) throw new Error('Select compressed nodes first.');
-  return ids.map(id => {
-    const kids = ctx.byId.get(id).children.filter(ctx.hasContent);
-    const g = createGroup(label, targetId, (firstText(ctx, id) || unitText(ctx, id)).slice(0, 120));
-    if (kids.length) addChildren(label, ctx, [id], g); else addLeaves(label, ctx, [id], g);
-    detach(label, g);
-    insertSorted(label, ctx, targetId, g);
-    return g;
-  });
 }
 
 export function createGroup(label, parentId, text, index = null) {
@@ -377,7 +342,7 @@ export function skip(label, ctx, compactIds, reason) {
   const leaves = leafMap(label);
   for (const id of compactIds) {
     const placed = [...leaves.keys()].find(ref => inside(ctx, ref, id) || inside(ctx, id, ref));
-    if (placed) throw new Error(`"${unitText(ctx, id).slice(0, 60)}" overlaps a placed unit; remove that first.`);
+    if (placed) throw new Error(`"${unitText(ctx, id).slice(0, 60)}" overlaps a placed unit; remove that before ignoring it.`);
   }
   for (const id of compactIds) {
     for (const other of Object.keys(label.skipped)) if (other !== id && inside(ctx, other, id)) delete label.skipped[other];

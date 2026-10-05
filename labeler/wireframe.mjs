@@ -9,14 +9,6 @@ export function boxes(model) {
   });
 }
 
-/** Compact nodes lying wholly inside `area`, keeping only the outermost of nested matches. */
-export function rectSelect(list, area, parentOf) {
-  const inside = list.filter(({ rect: r }) => r.x >= area.x && r.y >= area.y &&
-    r.x + r.width <= area.x + area.width && r.y + r.height <= area.y + area.height).map(b => b.id);
-  const chosen = new Set(inside);
-  return inside.filter(id => { for (let p = parentOf(id); p; p = parentOf(p)) if (chosen.has(p)) return false; return true; });
-}
-
 /** The smallest box under a point, or null. */
 export function hitTest(list, x, y) {
   let best = null;

@@ -7,7 +7,7 @@ Routes:
   GET  /corpus/pages/<site>/<page>/<file>  one of the six desktop capture files
   GET  /api/labels                         {page: status} for label files in runs/labels/
   GET  /api/labels/<site>/<page>           one saved label
-  POST /api/labels                         save a draft, or submit (validated against the page's source map)
+  POST /api/labels                         autosave a label as in_progress or complete (complete is re-validated)
   POST /api/export                         write an inspector dataset to runs/labels/datasets/
   POST /api/corpus-check                   writes runs/corpus/excluded.json from the in-browser check
 """
@@ -33,7 +33,10 @@ TYPES = {".html": "text/html; charset=utf-8", ".mjs": "text/javascript; charset=
          ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8"}
 PAGE_FILE = re.compile(r"/corpus/pages/([0-9a-f]{24})/([0-9a-f]{24})/(.+)")
 PAGE_ID = re.compile(r"[0-9a-f]{24}/[0-9a-f]{24}")
-MAX_POST = 32 << 20  # an exported dataset carries the page's whole raw DOM
+MAX_POST = 32 << 20
+# A page with no label file is untouched; earlier labels used draft/submitted.
+STATUSES = {"in_progress", "complete"}
+LEGACY = {"draft": "in_progress", "submitted": "complete"}  # an exported dataset carries the page's whole raw DOM
 
 
 class Server(ThreadingHTTPServer):
@@ -159,24 +162,29 @@ class Handler(BaseHTTPRequestHandler):
         return {"roots": [n["id"] for n in listed if n["parent"] is None], "nodes": listed}
 
     def save_label(self, label):
+        """Every save is kept. A label claiming to be complete that fails validate() is stored as in_progress."""
         path = self.label_path(label["page"])
         provenance = label.setdefault("provenance", {})
-        if provenance.get("status") not in {"draft", "submitted"}:
-            raise ValueError("status must be draft or submitted.")
+        if provenance.get("status") not in STATUSES:
+            raise ValueError("status must be in_progress or complete.")
         if not isinstance(label.get("nodes"), list) or not isinstance(label.get("rootId"), str):
             raise ValueError("A label needs rootId and nodes.")
-        if provenance["status"] == "submitted":
-            validate({"dom": self.page_dom(label["page"]), "variants": {"label": label}})
+        note = None
+        if provenance["status"] == "complete":
+            try:
+                validate({"dom": self.page_dom(label["page"]), "variants": {"label": label}})
+            except AssertionError as error:
+                provenance["status"], note = "in_progress", f"not complete: {str(error)[:200]}"
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
         previous = json.loads(path.read_text()).get("provenance", {}) if path.exists() else {}
         provenance.update(labeler=getpass.getuser(), started_at=previous.get("started_at", now), saved_at=now)
-        if provenance["status"] == "submitted":
-            provenance["submitted_at"] = now
+        if provenance["status"] == "complete":
+            provenance["completed_at"] = previous.get("completed_at", now)
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_suffix(".tmp")
         temporary.write_text(json.dumps(label, ensure_ascii=False, indent=1))
         temporary.replace(path)
-        return 200, {"status": provenance["status"], "saved_at": now}
+        return 200, {"status": provenance["status"], "saved_at": now, **({"note": note} if note else {})}
 
     def save_export(self, dataset):
         if not re.fullmatch(r"label-[0-9a-f]{24}", str(dataset.get("id"))):
@@ -192,7 +200,8 @@ class Handler(BaseHTTPRequestHandler):
         for path in sorted(self.labels.glob("*.json")) if self.labels.is_dir() else []:
             try:
                 label = json.loads(path.read_text())
-                status[label["page"]] = label.get("provenance", {}).get("status", "draft")
+                saved = label.get("provenance", {}).get("status")
+                status[label["page"]] = LEGACY.get(saved, saved if saved in STATUSES else "in_progress")
             except (ValueError, KeyError, TypeError):
                 continue
         return status

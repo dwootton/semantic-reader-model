@@ -1,9 +1,9 @@
 // Labeler UI: page picker, the editor (compressed DOM → semantic tree, with a wireframe and an
 // optional raw DOM pane), and the one-off corpus check (/?check). Page text is inserted as text, never as HTML.
 import { visibleRows } from '/inspector/model.mjs';
-import { compactFor, loadPage } from '/corpus.mjs';
+import { loadPage } from '/corpus.mjs';
 import * as M from '/label-model.mjs';
-import { boxes, hitTest, pageSize, rectSelect, textLines } from '/wireframe.mjs';
+import { boxes, hitTest, pageSize, textLines } from '/wireframe.mjs';
 
 const app = document.getElementById('app');
 const crumb = document.getElementById('crumb');
@@ -45,7 +45,7 @@ async function main() {
 
 async function showPicker(queue) {
   const labels = await getJson('/api/labels').catch(() => ({}));
-  const status = entry => labels[entry.page] || 'todo';
+  const status = entry => labels[entry.page] || 'untouched';
   let group = queue.groups[params.get('group')] ? params.get('group') : 'main';
   let query = '';
   crumb.textContent = 'Queue';
@@ -59,7 +59,7 @@ async function showPicker(queue) {
   const search = h('input', { type: 'search', placeholder: 'Search URL or category', 'aria-label': 'Search pages',
     oninput: event => { query = event.target.value.trim().toLowerCase(); render(); } });
   const next = h('button', { type: 'button', class: 'primary', onclick: () => {
-    const entry = queue.groups[group].find(e => status(e) === 'todo');
+    const entry = queue.groups[group].find(e => status(e) === 'untouched');
     if (entry) location.href = pageHref(entry.page, group);
   } }, 'Next page');
 
@@ -67,12 +67,12 @@ async function showPicker(queue) {
     tabs.forEach(tab => tab.setAttribute('aria-pressed', String(tab.dataset.group === group)));
     const entries = queue.groups[group];
     const shown = entries.filter(e => !query || (e.url || '').toLowerCase().includes(query) || e.category.toLowerCase().includes(query));
-    count.textContent = `${shown.length} shown · ${entries.filter(e => status(e) === 'todo').length} todo`;
+    count.textContent = `${shown.length} shown · ${entries.filter(e => status(e) === 'untouched').length} untouched`;
     body.replaceChildren(...shown.map(e => h('tr', {},
       h('td', { class: 'num' }, String(e.order)),
       h('td', { class: 'url' }, h('a', { href: pageHref(e.page, group) }, e.url || e.page)),
       h('td', {}, e.category),
-      h('td', {}, h('span', { class: `status ${status(e)}` }, status(e))))));
+      h('td', {}, h('span', { class: `status ${status(e)}` }, status(e).replace('_', ' '))))));
   }
 
   app.replaceChildren(
@@ -89,16 +89,28 @@ const shortText = node => node.ownText || node.attributes?.['aria-label'] || nod
 const isTyping = el => el && (el.matches('input, textarea, select') || el.isContentEditable);
 
 // A tree pane with multi-select. Its data can be replaced; the semantic tree changes on every edit.
-function noteIcon() {
+// Small stroked 16×16 icons.
+const ICONS = {
+  note: 'M2.5 3h11a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1H7l-3 2.5v-2.5H2.5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM4.5 6h7M4.5 8.5h5',
+  up: 'M8 13.5V3M3.5 7.5 8 3l4.5 4.5',
+  down: 'M8 2.5V13M3.5 8.5 8 13l4.5-4.5',
+  indent: 'M2 3h12M7.5 6.5H14M7.5 9.5H14M2 13h12M2 6l3 2-3 2',   // into the group above: lines step in
+  outdent: 'M2 3h12M7.5 6.5H14M7.5 9.5H14M2 13h12M5 6 2 8l3 2',  // out of the current group
+  undo: 'M5.5 3.5 2.5 6.5l3 3M2.5 6.5h7a4 4 0 0 1 0 8H7',
+  redo: 'M10.5 3.5l3 3-3 3M13.5 6.5h-7a4 4 0 0 0 0 8H9',
+  right: 'M2.5 8h11M9 3.5 13.5 8 9 12.5',
+};
+function icon(name) {
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');
   svg.setAttribute('viewBox', '0 0 16 16');
   svg.setAttribute('aria-hidden', 'true');
   const path = document.createElementNS(ns, 'path');
-  path.setAttribute('d', 'M2.5 3h11a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1H7l-3 2.5v-2.5H2.5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM4.5 6h7M4.5 8.5h5');
+  path.setAttribute('d', ICONS[name]);
   svg.append(path);
   return svg;
 }
+const noteIcon = () => icon('note');
 
 // The drag in progress, shared by all panes: { pane, ids }.
 let dragging = null;
@@ -108,24 +120,22 @@ let dragging = null;
 // 'before' | 'inside' | 'after', or 'end' for the empty area below the rows.
 function createTree({ title, pane, label = shortText, tagOf = n => `<${n.tag}>`, extras = () => [], rowClass = () => '',
   onPick, onRename = null, drop = null, rowAction = null, onAction = () => {}, toggleOnClick = () => false,
-  startExpanded = false, renamable = () => true, controls = [] }) {
-  let byId = new Map(), roots = [], query = '', selected = new Set(), related = new Set(), focusId = null, anchor = null, order = [];
+  startExpanded = false, renamable = () => true, band = () => null }) {
+  let byId = new Map(), roots = [], selected = new Set(), related = new Set(), focusId = null, anchor = null, order = [];
   let editing = null, dropAt = null;
   const expanded = new Set();
-  const searchText = n => `${n.tag || ''} ${n.label || ''} ${n.ownText || ''} ${Object.values(n.attributes || {}).join(' ')}`;
-  const count = h('span', { class: 'muted' });
   const container = h('div', { class: 'tree', role: 'tree', 'aria-label': title, 'aria-multiselectable': 'true' });
-  const search = h('input', { type: 'search', placeholder: 'Search', 'aria-label': `Search ${title}`,
-    oninput: event => { query = event.target.value; render(); } });
-  const element = h('section', { class: 'pane' }, h('h2', {}, title, ' ', count), h('div', { class: 'pane-tools' }, search, ...controls), container);
 
   function render() {
-    const rows = visibleRows(byId, roots, expanded, query, searchText);
+    const rows = visibleRows(byId, roots, expanded, '', () => '');
     order = rows.map(r => r.node.id);
     if (!order.includes(focusId)) focusId = order.find(id => selected.has(id)) ?? order[0] ?? null;
     const hadFocus = container.contains(document.activeElement);
-    container.replaceChildren(...rows.map(({ node, depth, open, hasChildren }) => h('div', {
-      class: `row ${rowClass(node)}${related.has(node.id) ? ' related' : ''}`, role: 'treeitem',
+    // A band is a run of rows that belong together (a placed unit and what it covers): mark its first and last row.
+    const bands = rows.map(r => band(r.node));
+    const edge = i => (bands[i] && bands[i] !== bands[i - 1] && !bands[i - 1] ? ' band-start' : '') + (bands[i] && bands[i] !== bands[i + 1] ? ' band-end' : '');
+    container.replaceChildren(...rows.map(({ node, depth, open, hasChildren }, i) => h('div', {
+      class: `row ${rowClass(node)}${edge(i)}${related.has(node.id) ? ' related' : ''}`, role: 'treeitem',
       'aria-level': depth + 1, 'aria-expanded': hasChildren ? String(open) : null,
       'aria-selected': String(selected.has(node.id)), tabindex: node.id === focusId ? 0 : -1,
       'data-id': node.id, style: `padding-left:${8 + depth * 14}px`, draggable: editing === node.id ? null : 'true' },
@@ -186,7 +196,8 @@ function createTree({ title, pane, label = shortText, tagOf = n => `<${n.tag}>`,
     if (event.target.closest('.toggle')) return toggle(row.dataset.id);
     if (event.target.closest('.row-action')) return onAction(row.dataset.id);
     const id = row.dataset.id, now = event.timeStamp;
-    const second = lastClick.id === id && now - lastClick.at < 400 && !event.shiftKey && !event.metaKey && !event.ctrlKey;
+    const second = Boolean(onRename) && renamable(byId.get(id)) && lastClick.id === id && now - lastClick.at < 400
+      && !event.shiftKey && !event.metaKey && !event.ctrlKey;
     lastClick = { id, at: second ? 0 : now };
     // A plain click on a toggling row (a group) also opens or closes it; the second click of a double-click undoes that.
     const flips = !event.shiftKey && !event.metaKey && !event.ctrlKey && toggleOnClick(byId.get(id)) && byId.get(id).children.length;
@@ -249,7 +260,7 @@ function createTree({ title, pane, label = shortText, tagOf = n => `<${n.tag}>`,
   });
 
   return {
-    element,
+    body: container,
     setData(nodes, newRoots) {
       byId = new Map(nodes.map(n => [n.id, { ...n }]));
       for (const n of byId.values()) for (const c of n.children) if (byId.has(c)) byId.get(c).parent = n.id;
@@ -258,7 +269,6 @@ function createTree({ title, pane, label = shortText, tagOf = n => `<${n.tag}>`,
         if (startExpanded) for (const n of byId.values()) { if (n.children.length) expanded.add(n.id); }
         else roots.forEach(r => { expanded.add(r); byId.get(r).children.forEach(c => expanded.add(c)); });
       }
-      count.textContent = `· ${byId.size}`;
       render();
     },
     setSelection(ids, relatedIds = []) { selected = new Set(ids); related = new Set(relatedIds); render(); },
@@ -270,10 +280,6 @@ function createTree({ title, pane, label = shortText, tagOf = n => `<${n.tag}>`,
       render();
     },
     reveal, render,
-    matching() {
-      const term = query.trim().toLowerCase();
-      return term ? order.filter(id => searchText(byId.get(id)).toLowerCase().includes(term)) : [];
-    },
     focus() { (rowEl(focusId) || container).focus?.(); },
   };
 }
@@ -282,7 +288,6 @@ async function showPage(queue, page, groupName) {
   const group = queue.groups[groupName] ? groupName : 'main';
   const entries = queue.groups[group];
   const index = entries.findIndex(e => e.page === page);
-  crumb.textContent = index >= 0 ? `${group} #${entries[index].order} of ${entries.length}` : page;
   app.replaceChildren(h('p', { class: 'muted' }, 'Loading page…'));
   let model, saved = null;
   try {
@@ -295,7 +300,9 @@ async function showPage(queue, page, groupName) {
 
   const ctx = M.pageIndex(model);
   let label = saved ? M.fromSaved(saved) : M.newLabel(ctx);
-  let status = saved?.provenance?.status || 'new';
+  // untouched (no label yet) → in_progress (edited) → complete (everything placed or skipped, no errors).
+  const legacy = { draft: 'in_progress', submitted: 'complete' };
+  let status = legacy[saved?.provenance?.status] || saved?.provenance?.status || 'untouched';
   let target = label.rootId;
   let selection = { pane: null, ids: [] };
   let hidePlaced = false;
@@ -306,21 +313,15 @@ async function showPage(queue, page, groupName) {
   // ---- panes
   const statusLine = h('span', { class: 'status-line', role: 'status' });
   const hideBox = h('label', { class: 'check' }, h('input', { type: 'checkbox', onchange: event => { hidePlaced = event.target.checked; update(); } }), ' Hide placed');
-  const selectMatches = h('button', { type: 'button', title: 'Select every node matching the search',
-    onclick: () => { const ids = compactTree.matching(); if (ids.length) choose('compact', ids); else say('Type a search first.', true); } }, 'Select matches');
-  let compactOpen = true;
-  const expandToggle = h('button', { type: 'button', title: 'Expand or collapse the whole compressed DOM', onclick: () => {
-    compactOpen = !compactOpen;
-    compactTree.setAllExpanded(compactOpen);
-    expandToggle.textContent = compactOpen ? 'Collapse all' : 'Expand all';
-  } }, 'Collapse all');
-  const compactTree = createTree({ title: 'Compressed DOM', pane: 'compact', controls: [selectMatches, expandToggle, hideBox], startExpanded: true,
+  const collapseBox = h('label', { class: 'check', title: 'Collapse or expand the whole compressed DOM' },
+    h('input', { type: 'checkbox', onchange: event => compactTree.setAllExpanded(!event.target.checked) }), ' Collapse all');
+  const compactTree = createTree({ title: 'Compressed DOM', pane: 'compact', startExpanded: true,
     // Dropping tree nodes back onto the compressed DOM removes them from the tree.
     drop: { accepts: from => from === 'semantic', inside: () => false,
       onDrop: payload => apply(() => { M.remove(label, payload.ids); selection = { pane: null, ids: [] }; }) },
     rowClass: n => ({ leaf: 'unit', placed: 'placed', skipped: 'skipped' })[placementOf(n.id)] || '',
-    extras: n => placementOf(n.id) === 'leaf' ? [h('span', { class: 'badge' }, 'unit')]
-      : placementOf(n.id) === 'skipped' && n.id in label.skipped ? [h('span', { class: 'badge' }, `skipped: ${label.skipped[n.id]}`)] : [],
+    extras: n => placementOf(n.id) === 'skipped' && n.id in label.skipped ? [h('span', { class: 'badge' }, `ignored: ${label.skipped[n.id]}`)] : [],
+    band: n => unitRoot.get(n.id) ?? null,
     onPick: (ids, how) => choose('compact', ids, how) });
   const semanticTree = createTree({ title: 'Semantic tree', pane: 'semantic',
     onRename: (id, text) => apply(() => M.setField(label, id, 'label', text)),
@@ -333,30 +334,16 @@ async function showPage(queue, page, groupName) {
     rowClass: n => `${n.kind === 'group' ? 'group' : 'leaf'}${n.id === target ? ' target' : ''}`,
     extras: n => n.kind === 'dom' ? [h('span', { class: 'badge' }, n.display_role || '')] : [],
     onPick: (ids, how) => choose('semantic', ids, how) });
-  const rawTree = createTree({ title: 'Raw DOM', pane: 'raw',
-    rowClass: n => n.compact.disposition === 'retained' ? '' : 'folded',
-    extras: n => n.compact.disposition === 'retained' ? [] : [h('span', { class: 'badge' }, n.compact.disposition)],
-    onPick: ids => { const match = compactFor(ids[0], rawById, ctx.byId); rawTree.setSelection([ids[0]]); if (match) choose('compact', [match], {}, 'raw'); } });
   const rawById = new Map(model.raw.nodes.map(n => [n.id, n]));
-  rawTree.setData(model.raw.nodes, model.raw.roots);
-  rawTree.element.hidden = true;
 
   const wire = createWireframe();
   const detail = h('div', { class: 'detail node-detail', hidden: true });
   let detailFor = null; // the tree node whose summary and notes are open
   const sourceDetail = h('div', { class: 'detail' });
-  const coverage = h('details', { class: 'coverage', open: true });
+  const coverage = h('div', { class: 'coverage' });
   const problems = h('div', { class: 'problems' });
-  compactTree.element.append(sourceDetail);
-  semanticTree.element.append(detail, problems, coverage);
 
   // ---- toolbar
-  const groupInput = h('input', { type: 'text', placeholder: 'Group label (blank: first element’s text)', 'aria-label': 'Group label',
-    onkeydown: event => { if (event.key === 'Enter') { event.preventDefault(); groupSelection(event.shiftKey); } if (event.key === 'Escape') groupInput.blur(); } });
-  const moveSelect = h('select', { 'aria-label': 'Move selection to group', onchange: event => {
-    const to = event.target.value; event.target.value = '';
-    if (to) apply(() => M.moveTo(label, selection.ids, to));
-  } });
   const button = (text, title, run, kind) => h('button', { type: 'button', title, 'data-kind': kind, onclick: run }, text);
   // Select similar: the nodes it started from, the current level, and the scope containers it searched.
   let similar = null;
@@ -366,12 +353,21 @@ async function showPage(queue, page, groupName) {
     Object.assign(similar, { level: result.level, scopes: result.scopes });
     choose('compact', result.ids, {}, 'similar');
   }
+  // Skip turns into Unskip when everything selected is already skipped; Group into Ungroup on a single group.
+  const allSkipped = () => selection.pane === 'compact' && selection.ids.length && selection.ids.every(id => id in label.skipped);
+  const skipButton = button('Ignore', 'Mark as not content, with a reason (S)', () => toggleSkip(), 'compact');
+  const oneGroup = () => selection.pane === 'semantic' && selection.ids.length === 1 && label.nodes[selection.ids[0]]?.kind === 'group' && selection.ids[0] !== label.rootId;
+  const groupButton = button('Group', 'Group the selected nodes, named after the first (G); on one group: ungroup it', () => toggleGroup(), 'tree');
+  function toggleSkip() { if (allSkipped()) apply(() => M.unskip(label, selection.ids)); else skipSelection(); }
+  function toggleGroup() { if (oneGroup()) apply(() => { M.unwrap(label, selection.ids[0]); selection = { pane: null, ids: [] }; }); else groupSelection(); }
+  // Add and Add children move nodes into the semantic tree: blue, with an arrow, at the right end of the menu.
+  const placeButton = (text, title, kind) => h('button', { type: 'button', class: 'primary place-button', title, 'data-kind': 'compact',
+    onclick: () => placeSelection(kind) }, text, icon('right'));
+  const placeButtons = [
+    placeButton('Add', 'Add the selected nodes to the tree as units, each covering everything inside it (A)', 'add'),
+    placeButton('Add children', 'Add each child of the selection to the tree as its own unit (C)', 'children'),
+  ];
   const compactButtons = [
-    button('Add', 'Add the selected nodes to the target group as units (A)', () => placeSelection('add'), 'compact'),
-    button('Add children', 'Add each child of the selection as its own unit (C)', () => placeSelection('children'), 'compact'),
-    button('Group', 'Group the selection, named by the label box or else the first element’s text (G)', () => groupSelection(false), 'compact'),
-    button('Group children', 'New group with each child as a unit (Shift+Enter in the label box)', () => groupSelection(true), 'compact'),
-    button('One unit', 'Make the selected node one unit, merging any units inside it (U)', () => placeSelection('unit'), 'compact-one'),
     button('Select similar', 'Select nodes on the same tag path as the selection; − and + narrow or widen the scope', () => {
       similar = { anchor: selection.ids, level: 1, scopes: [] };
       runSimilar(1);
@@ -380,54 +376,96 @@ async function showPage(queue, page, groupName) {
     button('+', 'Widen the similar scope by one level (siblings → cousins → second cousins)', () => runSimilar(similar.level + 1), 'similar'),
     similarInfo,
     button('Select siblings', 'Select every sibling of the selection', () => choose('compact', M.selectSiblings(ctx, selection.ids)), 'compact'),
-    button('Group each', 'One group per selected node, named from its first text, holding its children as units', () => {
-      let made = [];
-      apply(() => { made = M.groupEach(label, ctx, selection.ids, target); });
-      if (made.length) { made.forEach(id => semanticTree.expand(id)); selection = { pane: 'semantic', ids: made }; update(); }
-    }, 'compact'),
-    button('Skip', 'Mark as not content, with a reason (S)', () => skipSelection(), 'compact'),
-    button('Unskip', 'Remove the skip', () => apply(() => M.unskip(label, selection.ids)), 'compact'),
+    skipButton,
   ];
+  const treeIcon = (name, title, run) => h('button', { type: 'button', class: 'icon-button', title, 'aria-label': title, 'data-kind': 'tree', onclick: run }, icon(name));
   const treeButtons = [
-    button('Group', 'Wrap the selected siblings in a new group, named by the label box or the first node (G)', () => groupSelection(false), 'tree'),
-    button('Unwrap', 'Replace the group by its children', () => apply(() => selection.ids.forEach(id => M.unwrap(label, id))), 'tree'),
+    groupButton,
     button('Merge groups', 'Merge the selected groups into the first', () => apply(() => M.merge(label, selection.ids)), 'tree'),
-    button('↑', 'Move up (Alt+↑)', () => apply(() => M.move(label, selection.ids, -1)), 'tree'),
-    button('↓', 'Move down (Alt+↓)', () => apply(() => M.move(label, selection.ids, 1)), 'tree'),
-    button('→', 'Into the group above (Alt+→)', () => apply(() => M.indent(label, selection.ids)), 'tree'),
-    button('←', 'Out of the current group (Alt+←)', () => apply(() => M.outdent(label, selection.ids)), 'tree'),
-    moveSelect,
-    button('Split into children', 'Split a unit into its children', () => apply(() => selection.ids.forEach(id => M.splitLeaf(label, ctx, id))), 'tree'),
+    treeIcon('up', 'Move up (Alt+↑)', () => apply(() => M.move(label, selection.ids, -1))),
+    treeIcon('down', 'Move down (Alt+↓)', () => apply(() => M.move(label, selection.ids, 1))),
+    treeIcon('indent', 'Move into the group above (Alt+→)', () => apply(() => M.indent(label, selection.ids))),
+    treeIcon('outdent', 'Move out of its group (Alt+←)', () => apply(() => M.outdent(label, selection.ids))),
+    button('Unpack', 'Replace a unit with a unit for each of its parts', () => apply(() => selection.ids.forEach(id => M.splitLeaf(label, ctx, id))), 'tree'),
     button('Remove', 'Remove from the tree; units return to unplaced (Delete)', () => apply(() => { M.remove(label, selection.ids); selection = { pane: null, ids: [] }; }), 'tree'),
   ];
-  const targetLine = h('span', { class: 'target-line' });
-  const undoButton = button('Undo', 'Undo (⌘Z)', () => undo());
-  const redoButton = button('Redo', 'Redo (⇧⌘Z)', () => redo());
-  const deselectButton = button('Deselect', 'Clear the selection in every pane (Esc)', () => { selection = { pane: null, ids: [] }; similar = null; update(); });
-  const submitButton = h('button', { type: 'button', class: 'primary', onclick: () => submit() }, 'Submit');
-  const rawToggle = h('button', { type: 'button', onclick: () => { rawTree.element.hidden = !rawTree.element.hidden; layout(); } }, 'Raw DOM');
-  const nav = (entry, text) => entry ? h('a', { href: pageHref(entry.page, group) }, text) : h('span', { class: 'muted' }, text);
-  const panes = h('div', { class: 'panes' }, compactTree.element, semanticTree.element, wire.element, rawTree.element);
-
+  const iconButton = (name, title, run) => h('button', { type: 'button', class: 'icon-button', title, 'aria-label': title, onclick: run }, icon(name));
+  const undoButton = iconButton('undo', 'Undo (⌘Z)', () => undo());
+  const redoButton = iconButton('redo', 'Redo (⇧⌘Z)', () => redo());
+  const clearSelection = () => { selection = { pane: null, ids: [] }; similar = null; update(); };
+  // Clear appears in both menus.
+  const clearButtons = [0, 1].map(() => h('button', { type: 'button', class: 'text-button', title: 'Esc', onclick: clearSelection }, 'Clear Selection'));
+  const title = ctx.titleId ? M.unitText(ctx, ctx.titleId) : model.url;
+  document.title = `${title} · Semantic labeler`;
+  document.querySelector('.bar').hidden = true; // the page bar below replaces the app header here
+  const navButton = (entry, text, name) => entry
+    ? h('a', { class: 'nav-button', href: pageHref(entry.page, group), title: name, 'aria-label': name }, text)
+    : h('span', { class: 'nav-button disabled', 'aria-hidden': 'true' }, text);
+  // Draggable divider between the two columns (arrow keys too); the split is remembered per browser.
+  let workspace = null;
+  const splitter = h('div', { class: 'splitter', role: 'separator', 'aria-orientation': 'vertical', 'aria-label': 'Resize columns', tabindex: 0 });
+  const setSplit = percent => {
+    const value = Math.min(80, Math.max(30, percent));
+    workspace.style.setProperty('--left', `${value}%`);
+    splitter.setAttribute('aria-valuenow', String(Math.round(value)));
+    try { localStorage.setItem('labeler.split', String(value)); } catch { /* storage unavailable */ }
+  };
+  splitter.addEventListener('pointerdown', event => { splitter.setPointerCapture(event.pointerId); splitter.dataset.dragging = '1'; });
+  splitter.addEventListener('pointerup', () => { delete splitter.dataset.dragging; });
+  splitter.addEventListener('pointermove', event => {
+    if (!splitter.dataset.dragging) return;
+    const box = workspace.getBoundingClientRect();
+    setSplit((event.clientX - box.left) / box.width * 100);
+  });
+  splitter.addEventListener('keydown', event => {
+    const now = Number(splitter.getAttribute('aria-valuenow')) || 60;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { setSplit(now + (event.key === 'ArrowLeft' ? -2 : 2)); event.preventDefault(); }
+  });
   app.replaceChildren(
-    h('div', { class: 'meta' },
-      h('a', { href: `/?group=${group}` }, '← Queue'), nav(entries[index - 1], 'Previous'), nav(entries[index + 1], 'Next'),
-      h('a', { class: 'url', href: model.url, target: '_blank', rel: 'noreferrer' }, model.url),
-      h('span', { class: 'muted' }, model.category || ''),
-      h('span', { class: 'muted' }, `${model.stats.elements} elements → ${model.stats.compactNodes} compressed`), rawToggle),
-    h('div', { class: 'editbar' },
-      h('div', { class: 'editrow' }, targetLine, groupInput, undoButton, redoButton, deselectButton, statusLine, submitButton),
-      h('div', { class: 'editrow' }, h('span', { class: 'muted' }, 'Compressed:'), ...compactButtons,
-        h('span', { class: 'muted sep' }, 'Tree:'), ...treeButtons)),
-    panes);
-  function layout() {
-    panes.style.setProperty('--cols', rawTree.element.hidden ? 3 : 4);
-    rawToggle.setAttribute('aria-pressed', String(!rawTree.element.hidden));
-  }
-  layout();
+    h('header', { class: 'pagebar' },
+      h('a', { class: 'nav-button', href: `/?group=${group}` }, '← Queue'),
+      navButton(entries[index - 1], '‹', 'Previous page'), navButton(entries[index + 1], '›', 'Next page'),
+      h('h1', { class: 'page-title' }, title),
+      h('span', { class: 'page-category' }, model.category || ''),
+      h('a', { class: 'page-url', href: model.url, target: '_blank', rel: 'noreferrer' }, model.url)),
+    workspace = h('div', { class: 'workspace' },
+      h('section', { class: 'window dom-window', 'aria-label': 'Compressed DOM and wireframe' },
+        h('div', { class: 'menubar' }, collapseBox, hideBox,
+          h('span', { class: 'menu-sep' }), ...compactButtons, clearButtons[0], h('span', { class: 'place-group' }, ...placeButtons)),
+        h('div', { class: 'dom-split' },
+          h('div', { class: 'split-col' }, h('div', { class: 'split-title' }, h('span', {}, 'Wireframe'), wire.zoomBar), wire.view),
+          h('div', { class: 'split-col' }, h('div', { class: 'split-title' }, 'Compressed DOM'), compactTree.body)),
+        sourceDetail),
+      splitter,
+      h('div', { class: 'rightcol' },
+        h('section', { class: 'window unplaced-window', 'aria-label': 'Unplaced DOM nodes' }, coverage),
+        h('section', { class: 'window tree-window', 'aria-label': 'Semantic tree' },
+          h('div', { class: 'menubar' }, undoButton, redoButton, h('span', { class: 'menu-sep' }), ...treeButtons, clearButtons[1],
+            statusLine),
+          semanticTree.body, detail, problems))));
+
+  let savedSplit = 60;
+  try { savedSplit = Number(localStorage.getItem('labeler.split')) || 60; } catch { /* storage unavailable */ }
+  setSplit(savedSplit);
+
+  // One-way scroll sync: scrolling the compressed DOM brings the first row on screen that has a box to the
+  // top of the wireframe. Paused briefly after the editor scrolls things itself (selecting, revealing).
+  let syncHeldUntil = 0, syncFrame = 0;
+  const holdSync = () => { syncHeldUntil = performance.now() + 300; };
+  compactTree.body.addEventListener('scroll', () => {
+    if (syncFrame) return;
+    syncFrame = requestAnimationFrame(() => {
+      syncFrame = 0;
+      if (performance.now() < syncHeldUntil) return;
+      const top = compactTree.body.scrollTop;
+      for (const row of compactTree.body.children) {
+        if (row.offsetTop + row.offsetHeight > top && wire.alignTop(row.dataset.id)) break;
+      }
+    });
+  });
 
   // ---- state helpers
-  let placementMap = new Map();
+  let placementMap = new Map(), unitRoot = new Map();
   function placementOf(id) { return placementMap.get(id); }
   function leavesUnder(id) {
     const node = label.nodes[id];
@@ -446,9 +484,9 @@ async function showPage(queue, page, groupName) {
       const last = label.nodes[ids[ids.length - 1]];
       if (last) target = last.kind === 'group' ? last.id : M.parents(label).get(last.id);
     }
+    if (pane === 'compact' && next.length) holdSync();
     if (pane === 'compact' && next.length && from !== 'compact') { compactTree.reveal(next[0]); wire.scrollTo(next[0]); }
     if (pane === 'compact' && next.length && from === 'compact') wire.scrollTo(next[next.length - 1]);
-    if (pane === 'compact' && next.length === 1 && !rawTree.element.hidden) { rawTree.setSelection([next[0]]); rawTree.reveal(next[0]); }
     update();
   }
 
@@ -474,30 +512,33 @@ async function showPage(queue, page, groupName) {
   function changed() {
     if (!label.nodes[target]) target = label.rootId;
     selection.ids = selection.pane === 'semantic' ? selection.ids.filter(id => label.nodes[id]) : selection.ids;
-    if (status === 'submitted') status = 'draft';
     pendingSave = true;
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => save('draft'), 800);
+    saveTimer = setTimeout(save, 800);
   }
 
-  async function save(asStatus) {
+  const currentStatus = () => (!M.validateLabel(label, ctx).errors.length && !M.uncovered(label, ctx).length ? 'complete' : 'in_progress');
+  // Autosave is the only save. A complete label is re-checked by the server and exported for the inspector.
+  async function save() {
     clearTimeout(saveTimer);
     pendingSave = false;
-    const body = M.toSaved(label, ctx, asStatus);
+    const body = M.toSaved(label, ctx, currentStatus());
     try {
       const response = await fetch('/api/labels', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error);
-      status = asStatus;
-      say(`${asStatus === 'submitted' ? 'Submitted' : 'Draft saved'} ${new Date().toLocaleTimeString()}`);
-      return body;
+      status = result.status;
+      if (status === 'complete') {
+        body.provenance.status = status;
+        await fetch('/api/export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(M.toDataset(model, body)) });
+      }
+      say(`Saved ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · ${status.replace('_', ' ')}${result.note ? ` (${result.note})` : ''}`);
     } catch (error) {
       say(`Save failed: ${error.message}`, true);
-      throw error;
     }
   }
   window.addEventListener('pagehide', () => {
-    if (pendingSave) fetch('/api/labels', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(M.toSaved(label, ctx, 'draft')) });
+    if (pendingSave) fetch('/api/labels', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(M.toSaved(label, ctx, currentStatus())) });
   });
 
   // ---- commands
@@ -506,34 +547,27 @@ async function showPage(queue, page, groupName) {
     apply(() => {
       if (kind === 'add') M.addLeaves(label, ctx, selection.ids, target);
       else if (kind === 'children') M.addChildren(label, ctx, selection.ids, target);
-      else selection.ids.forEach(id => M.makeUnit(label, ctx, id, target));
       selection = { pane: null, ids: [] };
     });
   }
   // The label typed in the box, or else the first selected element's text (usually its heading).
-  function groupSelection(children) {
-    if (!selection.ids.length) return say('Select nodes to group first.', true);
-    const text = groupInput.value.trim() || firstSelectedText();
+  // Grouping happens in the tree: place compressed nodes first (Add, drag), then group the tree nodes.
+  function groupSelection() {
+    if (selection.pane !== 'semantic' || !selection.ids.length) return say('Select tree nodes to group (place compressed nodes first).', true);
+    const text = firstSelectedText();
     let created = null;
-    apply(() => {
-      created = selection.pane === 'compact' ? M.groupCompact(label, ctx, selection.ids, target, text, children)
-        : M.groupNodes(label, selection.ids, text);
-    });
-    if (created && label.nodes[created]) { groupInput.value = ''; semanticTree.expand(created); choose('semantic', [created]); }
+    apply(() => { created = M.groupNodes(label, selection.ids, text); });
+    if (created && label.nodes[created]) { semanticTree.expand(created); choose('semantic', [created]); }
   }
   function firstSelectedText() {
-    if (selection.pane === 'compact') {
-      const first = [...selection.ids].sort((a, b) => ctx.order.get(a) - ctx.order.get(b))[0];
-      return M.unitText(ctx, first).slice(0, 120);
-    }
     const order = [];
     const walk = id => { order.push(id); label.nodes[id].children.forEach(walk); };
     walk(label.rootId);
     return label.nodes[order.find(id => selection.ids.includes(id))].label;
   }
   function skipSelection() {
-    if (selection.pane !== 'compact') return say('Select compressed nodes to skip.', true);
-    const reason = prompt('Why skip? (e.g. decorative, advertisement, hidden)', 'not content');
+    if (selection.pane !== 'compact') return say('Select compressed nodes to ignore.', true);
+    const reason = prompt('Why ignore? (e.g. decorative, advertisement, hidden)', 'not content');
     if (reason === null) return;
     apply(() => { M.skip(label, ctx, selection.ids, reason); selection = { pane: null, ids: [] }; });
   }
@@ -555,19 +589,6 @@ async function showPage(queue, page, groupName) {
     });
   }
 
-  async function submit() {
-    const { errors } = M.validateLabel(label, ctx);
-    if (errors.length) return say(`Fix ${errors.length} problem${errors.length > 1 ? 's' : ''} before submitting.`, true);
-    try {
-      const body = await save('submitted');
-      await fetch('/api/export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(M.toDataset(model, body)) });
-      const labels = await getJson('/api/labels');
-      const next = entries.find(e => !labels[e.page]);
-      say('Submitted. Opening the next page…');
-      if (next) setTimeout(() => { location.href = pageHref(next.page, group); }, 700);
-    } catch { /* save() already reported the error */ }
-  }
-
   document.addEventListener('keydown', event => {
     if (isTyping(event.target)) return;
     const mod = event.metaKey || event.ctrlKey;
@@ -580,8 +601,8 @@ async function showPage(queue, page, groupName) {
       if (moves[event.key]) { apply(moves[event.key]); event.preventDefault(); }
       return;
     }
-    const keys = { g: () => groupSelection(false), a: () => placeSelection('add'), c: () => placeSelection('children'),
-      u: () => placeSelection('unit'), s: () => skipSelection(),
+    const keys = { g: () => toggleGroup(), a: () => placeSelection('add'), c: () => placeSelection('children'),
+      s: () => toggleSkip(),
       Delete: () => tree && apply(() => { M.remove(label, selection.ids); selection = { pane: null, ids: [] }; }),
       Backspace: () => tree && apply(() => { M.remove(label, selection.ids); selection = { pane: null, ids: [] }; }),
       Escape: () => { if (selection.ids.length) selection = { pane: null, ids: [] }; else target = label.rootId; update(); } };
@@ -592,6 +613,9 @@ async function showPage(queue, page, groupName) {
   // ---- rendering
   function update() {
     placementMap = M.placement(label, ctx);
+    unitRoot = new Map();
+    const markUnit = (id, root) => { unitRoot.set(id, root); ctx.byId.get(id).children.forEach(c => markUnit(c, root)); };
+    for (const n of Object.values(label.nodes)) if (n.kind === 'dom' && ctx.byId.has(n.sourceRefs[0])) markUnit(n.sourceRefs[0], n.sourceRefs[0]);
     for (const n of Object.values(label.nodes)) if (n.kind === 'group' && !knownGroups.has(n.id)) { knownGroups.add(n.id); semanticTree.expand(n.id); }
 
     // Compressed pane, optionally without nodes already placed or skipped.
@@ -607,22 +631,17 @@ async function showPage(queue, page, groupName) {
     wire.update(placementMap, selection.pane === 'compact' ? selection.ids : relatedCompact, similar ? similar.scopes : []);
     similarInfo.textContent = similar ? `${similar.level} level${similar.level > 1 ? 's' : ''} up · ${selection.ids.length} node${selection.ids.length === 1 ? '' : 's'}` : '';
 
-    const groups = Object.values(label.nodes).filter(n => n.kind === 'group');
-    moveSelect.replaceChildren(h('option', { value: '' }, 'Move to…'), ...groups.map(g => h('option', { value: g.id }, g.label)));
-    for (const b of [...compactButtons, ...treeButtons]) {
+    for (const b of [...compactButtons, ...placeButtons, ...treeButtons]) {
       const kind = b.dataset.kind;
       b.disabled = !selection.ids.length || (kind?.startsWith('compact') && selection.pane !== 'compact') || (kind?.startsWith('tree') && selection.pane !== 'semantic')
-        || (kind === 'compact-one' && selection.ids.length !== 1) || (kind?.startsWith('similar') && !similar)
+        || (kind?.startsWith('similar') && !similar)
         || (kind === 'similar-less' && similar?.level <= 1);
     }
     undoButton.disabled = !undoStack.length;
-    deselectButton.disabled = !selection.ids.length;
+    clearButtons.forEach(b => { b.disabled = !selection.ids.length; });
+    skipButton.textContent = allSkipped() ? 'Unignore' : 'Ignore';
+    groupButton.textContent = oneGroup() ? 'Ungroup' : 'Group';
     redoButton.disabled = !redoStack.length;
-    const path = [];
-    const parentMap = M.parents(label);
-    for (let id = target; id; id = parentMap.get(id)) path.unshift(label.nodes[id].label);
-    targetLine.replaceChildren('Adding to: ', h('strong', {}, path.join(' › ')));
-    submitButton.textContent = status === 'submitted' ? 'Submitted ✓' : 'Submit';
     renderDetail();
     renderProblems();
   }
@@ -666,15 +685,16 @@ async function showPage(queue, page, groupName) {
     const { errors, warnings } = M.validateLabel(label, ctx);
     problems.replaceChildren(...errors.map(e => h('p', { class: 'error' }, e)), ...warnings.filter(w => !/not placed/.test(w)).map(w => h('p', { class: 'muted' }, w)));
     const missing = M.uncovered(label, ctx);
-    coverage.replaceChildren(h('summary', {}, missing.length ? `Unplaced DOM nodes: ${missing.length}` : 'Unplaced DOM nodes: none ✓'),
-      missing.length ? h('button', { type: 'button', class: 'skip-all', title: 'Skip every node listed here, except ones holding a placed unit',
+    coverage.replaceChildren(h('div', { class: 'window-head' },
+      h('span', { class: 'window-title' }, missing.length ? `Unplaced DOM nodes · ${missing.length}` : 'Unplaced DOM nodes · none ✓'),
+      missing.length ? h('button', { type: 'button', class: 'skip-all', title: 'Ignore every node listed here, except ones holding a placed unit',
         onclick: () => {
-          const reason = prompt('Why skip all of these?', 'not content');
+          const reason = prompt('Why ignore all of these?', 'not content');
           if (reason === null) return;
           let left = 0;
           apply(() => { left = M.skipUncovered(label, ctx, reason); });
-          if (left) say(`${left} nodes hold placed units, so they can't be skipped; place or skip them individually.`, true);
-        } }, 'Skip all') : null,
+          if (left) say(`${left} nodes hold placed units, so they can't be ignored; place or ignore them individually.`, true);
+        } }, 'Ignore all') : null),
       // Entries can be clicked (select) or dragged onto the tree like compressed DOM rows.
       h('ul', {}, ...missing.slice(0, 200).map(id => h('li', {}, h('button', { type: 'button', class: 'link', draggable: 'true',
         onclick: () => choose('compact', [id], {}, 'coverage'),
@@ -711,49 +731,81 @@ async function showPage(queue, page, groupName) {
       page.append(h('div', { class: 'line', style: `left:${line.x}px;top:${line.y}px;height:${line.height}px;line-height:${line.height}px;` +
         `font-size:${line.fontSize}px;${line.bold ? 'font-weight:600;' : ''}transform:scaleX(${squeeze.toFixed(3)})` }, text));
     }
-    const marquee = h('div', { class: 'marquee', hidden: true });
-    const canvas = h('div', { class: 'wire-canvas' }, page, marquee);
+    const canvas = h('div', { class: 'wire-canvas' }, page);
     const scroller = h('div', { class: 'wire' }, canvas);
-    let scale = 1, zoom = 'fit';
-    const zoomSelect = h('select', { 'aria-label': 'Wireframe zoom', onchange: event => { zoom = event.target.value; fit(); } },
-      h('option', { value: 'fit' }, 'Fit width'), h('option', { value: '0.5' }, '50%'), h('option', { value: '1' }, '100%'));
-    const element = h('section', { class: 'pane' }, h('h2', {}, 'Wireframe ', h('span', { class: 'muted' }, `· ${list.length} boxes`)),
-      h('div', { class: 'pane-tools' }, zoomSelect, h('span', { class: 'muted' }, 'Drag to select · Alt-click selects the parent')), scroller);
+    // Zoom is relative to fit-width (1 = the whole page width fits the pane).
+    let scale = 1, zoom = 1;
+    const byBox = new Map(list.map(b => [b.id, b.rect]));
     function fit() {
-      scale = zoom === 'fit' ? Math.max(0.1, (scroller.clientWidth - 4) / size.width) : Number(zoom);
+      scale = Math.max(0.05, (scroller.clientWidth - 4) / size.width) * zoom;
       page.style.transform = `scale(${scale})`;
       canvas.style.width = `${size.width * scale}px`;
       canvas.style.height = `${size.height * scale}px`;
     }
     new ResizeObserver(fit).observe(scroller);
+    const ZOOMS = [1, 1.5, 2, 3, 4, 6, 8];
+    const zoomLabel = h('button', { type: 'button', class: 'text-button zoom-level', title: 'Back to fit width', onclick: () => setZoom(1) }, 'Fit');
+    // Change zoom keeping the page point under the cursor (or the pane's centre) where it is.
+    function setZoom(next, at = null) {
+      const box = scroller.getBoundingClientRect();
+      const ax = at ? at.clientX - box.left : scroller.clientWidth / 2, ay = at ? at.clientY - box.top : scroller.clientHeight / 2;
+      const px = (scroller.scrollLeft + ax) / scale, py = (scroller.scrollTop + ay) / scale;
+      zoom = Math.min(8, Math.max(1, next));
+      fit();
+      scroller.scrollLeft = px * scale - ax;
+      scroller.scrollTop = py * scale - ay;
+      zoomLabel.textContent = zoom === 1 ? 'Fit' : `${Math.round(zoom * 100)}%`;
+    }
+    const zoomBar = h('div', { class: 'zoom-bar' },
+      h('button', { type: 'button', class: 'icon-button', title: 'Zoom out', 'aria-label': 'Zoom out',
+        onclick: () => setZoom([...ZOOMS].reverse().find(z => z < zoom) ?? 1) }, '−'),
+      zoomLabel,
+      h('button', { type: 'button', class: 'icon-button', title: 'Zoom in (⌘/Ctrl + scroll or pinch also zooms)', 'aria-label': 'Zoom in',
+        onclick: () => setZoom(ZOOMS.find(z => z > zoom) ?? 8) }, '+'));
+    scroller.addEventListener('wheel', event => {
+      if (!event.ctrlKey && !event.metaKey) return; // plain scrolling pans
+      event.preventDefault();
+      setZoom(zoom * Math.exp(-event.deltaY * 0.003), event); // about ×1.35 per wheel notch; pinches are finer
+    }, { passive: false });
+    // Dragging pans; a click without movement selects the smallest box under the pointer
+    // (Alt-click: its parent; ⌘/Ctrl/Shift-click adds to the selection).
     const point = event => { const r = canvas.getBoundingClientRect(); return { x: (event.clientX - r.left) / scale, y: (event.clientY - r.top) / scale }; };
-    let start = null;
-    canvas.addEventListener('pointerdown', event => { if (event.button === 0) { start = point(event); canvas.setPointerCapture(event.pointerId); } });
+    let drag = null;
+    canvas.addEventListener('pointerdown', event => {
+      if (event.button !== 0 && event.button !== 1) return;
+      drag = { x: event.clientX, y: event.clientY, left: scroller.scrollLeft, top: scroller.scrollTop, moved: false };
+      canvas.setPointerCapture(event.pointerId);
+      event.preventDefault();
+    });
     canvas.addEventListener('pointermove', event => {
-      if (!start) return;
-      const p = point(event);
-      Object.assign(marquee.style, { left: `${Math.min(start.x, p.x) * scale}px`, top: `${Math.min(start.y, p.y) * scale}px`,
-        width: `${Math.abs(p.x - start.x) * scale}px`, height: `${Math.abs(p.y - start.y) * scale}px` });
-      marquee.hidden = false;
+      if (!drag) return;
+      const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
+      if (!drag.moved && Math.hypot(dx, dy) < 4) return;
+      drag.moved = true;
+      scroller.classList.add('panning');
+      scroller.scrollLeft = drag.left - dx;
+      scroller.scrollTop = drag.top - dy;
     });
     canvas.addEventListener('pointerup', event => {
-      if (!start) return;
-      const p = point(event), from = start;
-      start = null;
-      marquee.hidden = true;
-      const how = { add: event.metaKey || event.ctrlKey || event.shiftKey };
-      if (Math.abs(p.x - from.x) < 4 && Math.abs(p.y - from.y) < 4) {
-        let id = hitTest(list, p.x, p.y);
-        if (id && event.altKey) id = ctx.byId.get(id).parent || id;
-        if (id) choose('compact', [id], how, 'wire');
-      } else {
-        const area = { x: Math.min(from.x, p.x), y: Math.min(from.y, p.y), width: Math.abs(p.x - from.x), height: Math.abs(p.y - from.y) };
-        const ids = rectSelect(list, area, id => ctx.byId.get(id)?.parent);
-        if (ids.length) choose('compact', ids, how, 'wire');
-      }
+      const was = drag;
+      drag = null;
+      scroller.classList.remove('panning');
+      if (!was || was.moved) return;
+      const p = point(event);
+      let id = hitTest(list, p.x, p.y);
+      if (id && event.altKey) id = ctx.byId.get(id).parent || id;
+      if (id) choose('compact', [id], { add: event.metaKey || event.ctrlKey || event.shiftKey }, 'wire');
     });
+    scroller.title = 'Click to select (Alt: parent) · drag or scroll to pan · ⌘/Ctrl+scroll or pinch to zoom';
     return {
-      element,
+      view: scroller, zoomBar,
+      // Put a node's box at the top of the wireframe; false when it has no box.
+      alignTop(id) {
+        const r = byBox.get(id);
+        if (!r) return false;
+        scroller.scrollTop = Math.max(0, r.y * scale - 8);
+        return true;
+      },
       update(placements, highlighted, scopes = []) {
         const lit = new Set(highlighted), scoped = new Set(scopes);
         for (const [id, el] of els) {
@@ -762,7 +814,7 @@ async function showPage(queue, page, groupName) {
         }
       },
       scrollTo(id) {
-        const r = list.find(b => b.id === id)?.rect;
+        const r = byBox.get(id);
         if (!r) return;
         const top = r.y * scale, bottom = (r.y + r.height) * scale;
         if (top < scroller.scrollTop || bottom > scroller.scrollTop + scroller.clientHeight) scroller.scrollTop = Math.max(0, top - 40);
