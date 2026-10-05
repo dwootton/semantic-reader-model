@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 .lab-config.json
+.corpus.json
 **/credentials*.json
 **/application_default_credentials.json
 **/*service-account*.json

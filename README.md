@@ -59,6 +59,8 @@ python3 -m unittest discover -s tests -q
 python3 -m unittest discover -s inspector -p 'test_*.py' -q
 python3 -m unittest discover -s evals/hierarchy_judge -p 'test_*.py' -q
 node --test inspector/*.test.mjs
+python3 -m unittest discover -s labeler -p 'test_*.py' -q
+node --test labeler/*.test.mjs
 python3 scripts/check_staged_files.py
 ```
 
