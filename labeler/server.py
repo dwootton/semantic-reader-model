@@ -201,7 +201,9 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--port", type=int, default=8770)
+    parser.add_argument("--labels", type=Path, default=Handler.labels, help="where labels are read and written (tests use a scratch folder)")
     args = parser.parse_args()
+    Handler.labels = args.labels.resolve()
     server = Server(("127.0.0.1", args.port), Handler)
     print(f"Labeler: http://127.0.0.1:{args.port}", flush=True)
     try:

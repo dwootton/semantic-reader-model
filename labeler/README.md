@@ -17,15 +17,15 @@ python3 labeler/server.py              # http://127.0.0.1:8770
 Panes: **Compressed DOM** (what you label from), **Semantic tree** (what you build), **Wireframe** (boxes drawn from captured geometry; there are no screenshots). **Raw DOM** in the header adds the raw tree as a fourth pane.
 
 1. Select compressed nodes: click, ⌘-click to add, Shift-click for a range, **Select matches** for everything matching the search, or drag a box on the wireframe (it keeps the outermost nodes, so a box around a card selects the card). Alt-click on the wireframe selects the parent.
-2. Place them in the group shown as **Adding to** (the page root at first):
+2. Place them. **Drag** selected rows onto the semantic tree: the line or box shows whether they land before, after or inside a group. Or use the buttons, which put things in the group shown as **Adding to**: the last group you clicked in the tree (or the group of the unit you clicked; Esc returns to the page root).
    - **Add** (A): each selected node becomes one unit, covering everything inside it.
    - **Add children** (C): each child becomes its own unit (a list's items, say).
-   - **Group** (G, type a label, Enter): a new group holding the selection; Shift+Enter groups the children instead.
+   - **Group** (G): a new group holding the selection, named after the first selected element's text (so select a heading plus its content and press G). Type a label in the box first to name it yourself; Shift+Enter there groups the children instead.
    - **One unit** (U): one unit, merging any units already inside it.
    - **Skip** (S): not content (decorative, ad, hidden), with a reason.
    Placing a node that sits inside an existing unit splits that unit down to it, so you can start coarse (whole header) and refine.
-3. Shape the tree: select tree nodes and use Group, **Open** (O or double-click; new units go inside that group, Esc goes back up), Unwrap, Merge, ↑ ↓ (Alt+↑/↓), → ← (Alt+→/←, into the group above or out), Move to…, Split a unit into its children, Remove (Delete). Edit a node's label, summary and notes below the tree; the root also takes page notes.
-4. **Not placed** lists content still unplaced or unskipped; click an entry to select it. Errors are shown above it and block Submit.
+3. Shape the tree: drag tree nodes to reorder them or move them into other groups; drag them back onto the compressed DOM to remove them. **Double-click** a node (or press F2) to rename it in place. Buttons: Group, Unwrap, Merge groups, ↑ ↓ (Alt+↑/↓), → ← (Alt+→/←, into the group above or out), Move to…, Split into children (a unit into units for each child), Remove (Delete). Each tree row has an ellipsis on hover that opens its **summary** (what the group contains, for a reader) and **notes** (why you labeled it this way); rows with either show a note icon instead. The root also takes page notes.
+4. **Unplaced DOM nodes** lists content still unplaced or unskipped; click an entry to select it, drag it onto the tree to place it, or **Skip all** to skip everything listed at once (with one reason; nodes holding a placed unit are left for you). Errors are shown above it and block Submit.
 5. **Submit** validates in the browser and again on the server (against the page's source map), then opens the next page.
 
 Edits autosave as a draft about a second after each change; ⌘Z / ⇧⌘Z undo and redo. Editing a submitted label makes it a draft until submitted again.

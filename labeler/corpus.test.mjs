@@ -25,6 +25,13 @@ test('collector ids put excluded tags last', () => {
   assert.equal(ids.get('n6'), 2); // script
 });
 
+test('collector ids come from data-sr-capture-id when the HTML carries it', () => {
+  const tagged = elements.map((e, i) => ({ ...e, captureId: `n${[3, 1, 6, 2, 4, 5][i]}` }));
+  const ids = collectorIds(tagged);
+  assert.equal(ids.get('n6'), 2);
+  assert.equal(ids.get('n3'), 0);
+});
+
 test('raw and compact trees share IDs and geometry lands on the right element', () => {
   const page = buildPage(input());
   const raw = new Map(page.raw.nodes.map(n => [n.id, n]));

@@ -97,6 +97,21 @@ function insertSorted(label, ctx, parentId, id) {
   list.splice(at < 0 ? list.length : at, 0, id);
 }
 
+// Put `id` into a group before its child `before`; null or a missing child appends at the end.
+function insertBefore(label, parentId, id, before) {
+  const list = label.nodes[parentId].children;
+  const at = before == null ? -1 : list.indexOf(before);
+  list.splice(at < 0 ? list.length : at, 0, id);
+}
+
+// Node IDs in the order they appear in the tree.
+function treeOrder(label) {
+  const out = [];
+  const walk = id => { out.push(id); label.nodes[id].children.forEach(walk); };
+  walk(label.rootId);
+  return out;
+}
+
 const outermost = (ctx, ids) => ids.filter(id => !ids.some(other => other !== id && inside(ctx, id, other)));
 
 // Replace a leaf with leaves for each content-bearing compact child, in place.
@@ -131,8 +146,11 @@ function skippedBy(label, ctx, id) {
   return [id, ...ancestorsOf(ctx, id)].find(candidate => candidate in label.skipped) || null;
 }
 
-/** Place compact nodes as reading units in a group. Existing units move; enclosing units are split. */
-export function addLeaves(label, ctx, compactIds, targetId) {
+/**
+ * Place compact nodes as reading units in a group. Existing units move; enclosing units are split.
+ * `before` (a child of the group, or null for the end) places them exactly; omitted, they go in document order.
+ */
+export function addLeaves(label, ctx, compactIds, targetId, before) {
   group(label, targetId);
   const ids = outermost(ctx, [...new Set(compactIds)]).sort(byOrder(ctx));
   if (!ids.length) throw new Error('Select compressed nodes first.');
@@ -149,7 +167,8 @@ export function addLeaves(label, ctx, compactIds, targetId) {
     const leaves = leafMap(label);
     const cover = coveringLeaf(ctx, leaves, id);
     const leafId = cover ? splitTo(label, ctx, cover, id) : makeLeaf(label, ctx, id);
-    if (parents(label).get(leafId) !== targetId) { detach(label, leafId); insertSorted(label, ctx, targetId, leafId); }
+    if (before !== undefined) { if (leafId !== before) { detach(label, leafId); insertBefore(label, targetId, leafId, before); } }
+    else if (parents(label).get(leafId) !== targetId) { detach(label, leafId); insertSorted(label, ctx, targetId, leafId); }
   }
 }
 
@@ -264,12 +283,21 @@ export function outdent(label, ids) {
   label.nodes[grand].children.splice(at, 0, ...members);
 }
 
-export function moveTo(label, ids, groupId) {
+/** Move tree nodes into a group, before its child `before` (null: at the end), keeping their tree order. */
+export function moveTo(label, ids, groupId, before = null) {
   group(label, groupId);
   const map = parents(label);
   for (let p = groupId; p; p = map.get(p)) if (ids.includes(p)) throw new Error('Cannot move a group into itself.');
   if (ids.includes(label.rootId)) throw new Error('The page root cannot be moved.');
-  for (const id of ids) { detach(label, id); label.nodes[groupId].children.push(id); }
+  if (before != null && ids.includes(before)) {
+    const list = label.nodes[map.get(before)].children;
+    before = list.slice(list.indexOf(before) + 1).find(c => !ids.includes(c)) ?? null;
+  }
+  const order = treeOrder(label);
+  for (const id of [...ids].sort((a, b) => order.indexOf(a) - order.indexOf(b))) {
+    detach(label, id);
+    insertBefore(label, groupId, id, before);
+  }
 }
 
 export function remove(label, ids) {
@@ -299,6 +327,16 @@ export function skip(label, ctx, compactIds, reason) {
     for (const other of Object.keys(label.skipped)) if (other !== id && inside(ctx, other, id)) delete label.skipped[other];
     label.skipped[id] = reason.trim() || 'skipped';
   }
+}
+
+/** Skip every unplaced content node that holds no placed unit, outermost first. Returns how many stay unplaced. */
+export function skipUncovered(label, ctx, reason) {
+  const units = [...leafMap(label).keys()];
+  for (const id of uncovered(label, ctx)) {
+    if (skippedBy(label, ctx, id) || units.some(ref => inside(ctx, ref, id))) continue;
+    label.skipped[id] = reason.trim() || 'skipped';
+  }
+  return uncovered(label, ctx).length;
 }
 
 export function unskip(label, compactIds) {
@@ -381,7 +419,7 @@ export function fromSaved(saved) {
 export function toDataset(model, saved) {
   const id = `label-${model.page.split('/')[1]}`;
   return { id, label: `${saved.nodes[0].label} · labeled`, url: model.url,
-    dom: { roots: model.raw.roots, nodes: model.raw.nodes.map(({ compact, style, ...node }) => node) },
+    dom: { roots: model.raw.roots, nodes: model.raw.nodes.map(({ compact, style, textBoxes, invisible, ...node }) => node) },
     variants: { gold: { rootId: saved.rootId, nodes: saved.nodes } },
     variantLabels: { gold: 'Labeler gold (human)' }, screenshot: null,
     limitations: ['Media-suppressed corpus capture; no screenshot.', 'Hand-labeled in the semantic labeler from the compressed DOM.'],

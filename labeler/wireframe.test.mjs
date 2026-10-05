@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { boxes, hitTest, rectSelect } from './wireframe.mjs';
+import { boxes, hitTest, rectSelect, textLines } from './wireframe.mjs';
 
 const rect = (x, y, width, height) => ({ x, y, width, height });
 const model = {
@@ -26,4 +26,17 @@ test('a click picks the smallest box under the pointer', () => {
   assert.equal(hitTest(list, 20, 15), 'title');
   assert.equal(hitTest(list, 150, 50), 'card');
   assert.equal(hitTest(list, 600, 600), null);
+});
+
+test('text is split across its rendered lines by character count, in position order', () => {
+  const page = { raw: { nodes: [
+    { id: 'p', ownText: 'Client Libraries and more', style: { fontSize: 14, bold: false },
+      textBoxes: [{ x: 5, y: 40, width: 60, height: 16, length: 8 }, { x: 80, y: 20, width: 120, height: 16, length: 17 },
+        { x: 0, y: 20, width: 3, height: 16, length: 1 }] },
+    { id: 'a', ownText: 'Docs', style: { fontSize: 13, bold: true }, textBoxes: [{ x: 1, y: 2, width: 30, height: 15, length: 4 }] },
+    { id: 'none', ownText: 'No geometry' },
+    { id: 'faded', ownText: 'Hidden title', invisible: true, textBoxes: [{ x: 0, y: 0, width: 50, height: 10, length: 12 }] }] } };
+  const lines = textLines(page);
+  assert.deepEqual(lines.map(l => [l.x, l.text]), [[80, 'Client Libraries'], [5, 'and more'], [1, 'Docs']]);
+  assert.equal(lines[2].bold, true);
 });

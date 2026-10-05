@@ -4,7 +4,9 @@
 // IDs: every raw element is `src-<base36 document-order index>` of document.html, the same scheme
 // as the published SFT-109 examples. The compact source map uses the same indexes, so a compact
 // node shares its raw element's ID; a collapsed element points at its `representedBy` element.
-// Geometry rows use the capture collector's `n<k>` IDs: document order, COLLECTOR_EXCLUDED tags last.
+// Geometry rows use the capture collector's `n<k>` IDs, which document.html carries on every element as
+// data-sr-capture-id. (Inferring them from document order, as scripts/build_sft109_qualitative.py does,
+// misassigns geometry on some pages; that order rule is only a fallback for HTML without the attribute.)
 // parseDocument/parseCompact need a DOMParser (the browser); buildPage is pure.
 
 export const CAPTURE_FILES = ['capture.json', 'environment.json', 'document.html', 'geometry.json',
@@ -30,7 +32,8 @@ export function parseDocument(html, Parser = globalThis.DOMParser) {
     return { index: i, tag: el.localName, parent: el.parentElement ? index.get(el.parentElement) : null,
       children: [...el.children].map(c => index.get(c)), attributes,
       ownText: inert ? '' : ownTextOf(el).slice(0, 600), text: text.slice(0, 1800), textTruncated: text.length > 1800,
-      hidden: el.hasAttribute('hidden') || attributes['aria-hidden'] === 'true' };
+      hidden: el.hasAttribute('hidden') || attributes['aria-hidden'] === 'true',
+      captureId: el.getAttribute('data-sr-capture-id') };
   });
 }
 
@@ -68,6 +71,7 @@ export function checkSourceMap(elements, sourceMap) {
 }
 
 export function collectorIds(elements) {
+  if (elements.some(e => e.captureId)) return new Map(elements.filter(e => e.captureId).map(e => [e.captureId, e.index]));
   const ordered = [...elements.filter(e => !COLLECTOR_EXCLUDED.has(e.tag)), ...elements.filter(e => COLLECTOR_EXCLUDED.has(e.tag))];
   return new Map(ordered.map((e, i) => [`n${i + 1}`, e.index]));
 }
@@ -77,7 +81,7 @@ const srcId = index => `src-${Number(index).toString(36)}`;
 export function buildPage({ page, capture, environment, elements, sourceMap, geometry, compact }) {
   checkSourceMap(elements, sourceMap);
   const nIndex = collectorIds(elements);
-  const rects = new Map(), styles = new Map();
+  const rects = new Map(), styles = new Map(), lines = new Map(), invisible = new Set();
   for (const row of geometry.elements_and_text || []) {
     const index = nIndex.get(row.dom_id);
     if (index !== undefined && row.bounds) {
@@ -85,8 +89,19 @@ export function buildPage({ page, capture, environment, elements, sourceMap, geo
       rects.set(index, { x, y, width, height });
       const size = parseFloat(row.styles?.['font-size']);
       if (size) styles.set(index, { fontSize: size, bold: Number(row.styles['font-weight']) >= 600 });
+      const st = row.styles || {};
+      if (st.visibility === 'hidden' || st.visibility === 'collapse' || st.opacity === '0' || st.display === 'none') invisible.add(index);
     }
   }
+  // Rendered text lines (position + character count) of each element's own text, for the wireframe.
+  for (const box of geometry.text_boxes || []) {
+    const index = nIndex.get(box.text_parent_dom_id);
+    if (index === undefined || !box.bounds || box.bounds[2] <= 0) continue;
+    const [x, y, width, height] = box.bounds;
+    lines.set(index, [...(lines.get(index) || []), { x, y, width, height, length: box.length ?? 0 }]);
+  }
+  // Opacity is not inherited, so an element inside an invisible one is invisible too (elements come in document order).
+  for (const e of elements) if (e.parent !== null && invisible.has(e.parent)) invisible.add(e.index);
   const raw = elements.map(e => {
     const entry = sourceMap[e.index];
     const node = { id: srcId(e.index), parent: e.parent === null ? null : srcId(e.parent), children: e.children.map(srcId),
@@ -94,6 +109,8 @@ export function buildPage({ page, capture, environment, elements, sourceMap, geo
       compact: { disposition: entry.disposition, representedBy: entry.representedBy == null ? null : `src-${entry.representedBy}` } };
     if (rects.has(e.index)) node.rect = rects.get(e.index);
     if (styles.has(e.index)) node.style = styles.get(e.index);
+    if (lines.has(e.index)) node.textBoxes = lines.get(e.index);
+    if (invisible.has(e.index)) node.invisible = true;
     return node;
   });
   const byRef = new Map(sourceMap.map(entry => [entry.id, entry]));

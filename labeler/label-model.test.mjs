@@ -125,3 +125,30 @@ test('saved form round-trips and exports a banana-bread-shaped dataset', () => {
   assert.deepEqual(Object.keys(dataset.variants), ['gold']);
   assert.ok(dataset.dom.nodes.every(n => !('compact' in n) && !('style' in n)));
 });
+
+test('drops place units and nodes exactly where they land', () => {
+  const label = L.newLabel(ctx);
+  L.addLeaves(label, ctx, ['h1', 'p'], 'page');
+  L.addLeaves(label, ctx, ['f'], 'page', 'leaf-h1');
+  assert.deepEqual(kids(label, 'page'), ['leaf-f', 'leaf-h1', 'leaf-p'], 'before a sibling, not in document order');
+  L.addLeaves(label, ctx, ['f'], 'page', null);
+  assert.deepEqual(kids(label, 'page'), ['leaf-h1', 'leaf-p', 'leaf-f'], 'null appends; an existing unit moves');
+  const g = L.groupNodes(label, ['leaf-p'], 'G');
+  L.moveTo(label, ['leaf-f', 'leaf-h1'], g, 'leaf-p');
+  assert.deepEqual(kids(label, g), ['leaf-h1', 'leaf-f', 'leaf-p'], 'kept in tree order, before the drop target');
+  L.moveTo(label, ['leaf-h1', 'leaf-f'], g, 'leaf-f');
+  assert.deepEqual(kids(label, g), ['leaf-h1', 'leaf-f', 'leaf-p'], 'dropping onto the moved block leaves it in place');
+  assert.throws(() => L.moveTo(label, [g], g), /into itself/);
+  L.addLeaves(label, ctx, ['li2'], g, 'leaf-p');
+  assert.deepEqual(kids(label, g), ['leaf-h1', 'leaf-f', 'leaf-li2', 'leaf-p']);
+});
+
+test('skip all skips unplaced content but never covers a placed unit', () => {
+  const label = L.newLabel(ctx);
+  L.addLeaves(label, ctx, ['a1'], 'page');
+  const left = L.skipUncovered(label, ctx, 'not content');
+  assert.equal(left, 0);
+  assert.ok(!('nav' in label.skipped) && !('hd' in label.skipped), 'containers of the placed link are not skipped');
+  assert.ok('a2' in label.skipped && 'logo' in label.skipped && 'ul' in label.skipped === false);
+  assert.deepEqual(L.validateLabel(label, ctx).errors, []);
+});

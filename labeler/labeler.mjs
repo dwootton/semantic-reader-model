@@ -3,7 +3,7 @@
 import { visibleRows } from '/inspector/model.mjs';
 import { compactFor, loadPage } from '/corpus.mjs';
 import * as M from '/label-model.mjs';
-import { boxes, hitTest, pageSize, rectSelect } from '/wireframe.mjs';
+import { boxes, hitTest, pageSize, rectSelect, textLines } from '/wireframe.mjs';
 
 const app = document.getElementById('app');
 const crumb = document.getElementById('crumb');
@@ -89,9 +89,27 @@ const shortText = node => node.ownText || node.attributes?.['aria-label'] || nod
 const isTyping = el => el && (el.matches('input, textarea, select') || el.isContentEditable);
 
 // A tree pane with multi-select. Its data can be replaced; the semantic tree changes on every edit.
-function createTree({ title, label = shortText, tagOf = n => `<${n.tag}>`, extras = () => [], rowClass = () => '',
-  onPick, onOpen = () => {}, controls = [] }) {
+function noteIcon() {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS(ns, 'path');
+  path.setAttribute('d', 'M2.5 3h11a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1H7l-3 2.5v-2.5H2.5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM4.5 6h7M4.5 8.5h5');
+  svg.append(path);
+  return svg;
+}
+
+// The drag in progress, shared by all panes: { pane, ids }.
+let dragging = null;
+
+// A tree pane with multi-select, drag and drop, and optional rename in place.
+// `drop`: { accepts(fromPane), inside(node) → may drop into it, onDrop(payload, { id, zone }) } where zone is
+// 'before' | 'inside' | 'after', or 'end' for the empty area below the rows.
+function createTree({ title, pane, label = shortText, tagOf = n => `<${n.tag}>`, extras = () => [], rowClass = () => '',
+  onPick, onRename = null, drop = null, rowAction = null, onAction = () => {}, toggleOnClick = () => false, controls = [] }) {
   let byId = new Map(), roots = [], query = '', selected = new Set(), related = new Set(), focusId = null, anchor = null, order = [];
+  let editing = null, dropAt = null;
   const expanded = new Set();
   const searchText = n => `${n.tag || ''} ${n.label || ''} ${n.ownText || ''} ${Object.values(n.attributes || {}).join(' ')}`;
   const count = h('span', { class: 'muted' });
@@ -104,13 +122,45 @@ function createTree({ title, label = shortText, tagOf = n => `<${n.tag}>`, extra
     const rows = visibleRows(byId, roots, expanded, query, searchText);
     order = rows.map(r => r.node.id);
     if (!order.includes(focusId)) focusId = order.find(id => selected.has(id)) ?? order[0] ?? null;
+    const hadFocus = container.contains(document.activeElement);
     container.replaceChildren(...rows.map(({ node, depth, open, hasChildren }) => h('div', {
       class: `row ${rowClass(node)}${related.has(node.id) ? ' related' : ''}`, role: 'treeitem',
       'aria-level': depth + 1, 'aria-expanded': hasChildren ? String(open) : null,
       'aria-selected': String(selected.has(node.id)), tabindex: node.id === focusId ? 0 : -1,
-      'data-id': node.id, style: `padding-left:${8 + depth * 14}px` },
+      'data-id': node.id, style: `padding-left:${8 + depth * 14}px`, draggable: editing === node.id ? null : 'true' },
     h('span', { class: 'toggle', 'aria-hidden': 'true' }, hasChildren ? (open ? '▾' : '▸') : ''),
-    h('span', { class: 'tag' }, tagOf(node)), ...extras(node), h('span', { class: 'text' }, label(node)))));
+    h('span', { class: 'tag' }, tagOf(node)), ...extras(node),
+    editing === node.id ? renameInput(node) : h('span', { class: 'text' }, label(node)), actionButton(node))));
+    // Re-rendering replaces the rows; keep keyboard focus on the current row so arrow keys keep working.
+    if (container.querySelector('.rename')) container.querySelector('.rename').focus();
+    else if (hadFocus) rowEl(focusId)?.focus({ preventScroll: true });
+  }
+  // Optional button at the row's right edge: an ellipsis on hover, or a note icon kept visible when the row has notes.
+  function actionButton(node) {
+    const action = rowAction?.(node);
+    if (!action) return null;
+    return h('button', { type: 'button', class: `row-action${action.note ? ' has-note' : ''}`, tabindex: -1,
+      title: action.note ? 'Summary and notes' : 'Add a summary or notes', 'aria-label': action.note ? 'Summary and notes' : 'Add a summary or notes' },
+    action.note ? noteIcon() : '…');
+  }
+  function renameInput(node) {
+    let done = false;
+    const finish = save => {
+      if (done) return;
+      done = true;
+      editing = null;
+      if (save && input.value.trim() && input.value !== node.label) onRename(node.id, input.value.trim()); else render();
+    };
+    const input = h('input', { class: 'rename', type: 'text', value: node.label, 'aria-label': 'Rename',
+      onkeydown: event => { event.stopPropagation(); if (event.key === 'Enter') finish(true); if (event.key === 'Escape') finish(false); },
+      onblur: () => finish(true) });
+    return input;
+  }
+  function startRename(id) {
+    if (!onRename || !byId.has(id)) return;
+    editing = id;
+    render();
+    container.querySelector('.rename')?.select();
   }
   const rowEl = id => container.querySelector(`[data-id="${CSS.escape(id)}"]`);
   function reveal(id) {
@@ -127,16 +177,64 @@ function createTree({ title, label = shortText, tagOf = n => `<${n.tag}>`, extra
     onPick(ids, { add: event.metaKey || event.ctrlKey || range, range });
   }
 
+  // Rows are re-rendered on every click, so the browser's dblclick never fires; detect a second click here.
+  let lastClick = { id: null, at: 0 };
   container.addEventListener('click', event => {
     const row = event.target.closest('.row');
-    if (!row) return;
-    if (event.target.closest('.toggle')) toggle(row.dataset.id); else pick(row.dataset.id, event);
+    if (!row || event.target.closest('.rename')) return;
+    if (event.target.closest('.toggle')) return toggle(row.dataset.id);
+    if (event.target.closest('.row-action')) return onAction(row.dataset.id);
+    const id = row.dataset.id, now = event.timeStamp;
+    const second = lastClick.id === id && now - lastClick.at < 400 && !event.shiftKey && !event.metaKey && !event.ctrlKey;
+    lastClick = { id, at: second ? 0 : now };
+    // A plain click on a toggling row (a group) also opens or closes it; the second click of a double-click undoes that.
+    const flips = !event.shiftKey && !event.metaKey && !event.ctrlKey && toggleOnClick(byId.get(id)) && byId.get(id).children.length;
+    if (flips) { if (expanded.has(id)) expanded.delete(id); else expanded.add(id); }
+    if (second) startRename(id); else pick(id, event);
   });
-  container.addEventListener('dblclick', event => { const row = event.target.closest('.row'); if (row) onOpen(row.dataset.id); });
+
+  // ---- drag and drop
+  const clearDrop = () => { container.querySelectorAll('.drop-before, .drop-inside, .drop-after').forEach(r => r.classList.remove('drop-before', 'drop-inside', 'drop-after')); container.classList.remove('drop-end'); dropAt = null; };
+  container.addEventListener('dragstart', event => {
+    const row = event.target.closest('.row');
+    if (!row) return;
+    const id = row.dataset.id;
+    dragging = { pane, ids: selected.has(id) ? order.filter(o => selected.has(o)) : [id] };
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', dragging.ids.join(' '));
+  });
+  container.addEventListener('dragend', () => { dragging = null; clearDrop(); });
+  container.addEventListener('dragover', event => {
+    if (!dragging || !drop?.accepts(dragging.pane)) return;
+    event.preventDefault();
+    const row = event.target.closest('.row');
+    const id = row?.dataset.id;
+    let zone = 'end';
+    if (row && !(dragging.pane === pane && dragging.ids.includes(id))) {
+      const box = row.getBoundingClientRect(), y = (event.clientY - box.top) / box.height;
+      const into = drop.inside(byId.get(id));
+      zone = !byId.get(id).parent ? 'inside' : into ? (y < 0.25 ? 'before' : y > 0.75 ? 'after' : 'inside') : (y < 0.5 ? 'before' : 'after');
+    } else if (row) zone = null;
+    clearDrop();
+    if (!zone) return;
+    dropAt = { id: zone === 'end' ? null : id, zone };
+    if (zone === 'end') container.classList.add('drop-end'); else row.classList.add(`drop-${zone}`);
+  });
+  container.addEventListener('dragleave', event => { if (!container.contains(event.relatedTarget)) clearDrop(); });
+  container.addEventListener('drop', event => {
+    event.preventDefault();
+    const payload = dragging, at = dropAt;
+    dragging = null;
+    clearDrop();
+    if (payload && at) drop.onDrop(payload, at);
+  });
   container.addEventListener('keydown', event => {
+    if (event.target.closest('.rename')) return;
+    if (event.key === 'F2' && focusId) { startRename(focusId); event.preventDefault(); return; }
     const i = order.indexOf(focusId);
     const node = byId.get(focusId);
-    const go = j => { if (order[j]) { focusId = order[j]; render(); rowEl(focusId).focus(); if (event.shiftKey) pick(focusId, event); } };
+    // Selection follows the arrow keys (Shift extends it), so keyboard commands act on the row you see focused.
+    const go = j => { if (order[j]) { const id = order[j]; pick(id, event.shiftKey ? event : {}); rowEl(id)?.focus(); } };
     if (event.altKey) return; // Alt+arrows belong to the editor's move commands
     if (event.key === 'ArrowDown') go(i + 1);
     else if (event.key === 'ArrowUp') go(Math.max(0, i - 1));
@@ -200,17 +298,25 @@ async function showPage(queue, page, groupName) {
   const hideBox = h('label', { class: 'check' }, h('input', { type: 'checkbox', onchange: event => { hidePlaced = event.target.checked; update(); } }), ' Hide placed');
   const selectMatches = h('button', { type: 'button', title: 'Select every node matching the search',
     onclick: () => { const ids = compactTree.matching(); if (ids.length) choose('compact', ids); else say('Type a search first.', true); } }, 'Select matches');
-  const compactTree = createTree({ title: 'Compressed DOM', controls: [selectMatches, hideBox],
+  const compactTree = createTree({ title: 'Compressed DOM', pane: 'compact', controls: [selectMatches, hideBox],
+    // Dropping tree nodes back onto the compressed DOM removes them from the tree.
+    drop: { accepts: from => from === 'semantic', inside: () => false,
+      onDrop: payload => apply(() => { M.remove(label, payload.ids); selection = { pane: null, ids: [] }; }) },
     rowClass: n => ({ leaf: 'unit', placed: 'placed', skipped: 'skipped' })[placementOf(n.id)] || '',
     extras: n => placementOf(n.id) === 'leaf' ? [h('span', { class: 'badge' }, 'unit')]
       : placementOf(n.id) === 'skipped' && n.id in label.skipped ? [h('span', { class: 'badge' }, `skipped: ${label.skipped[n.id]}`)] : [],
     onPick: (ids, how) => choose('compact', ids, how) });
-  const semanticTree = createTree({ title: 'Semantic tree',
+  const semanticTree = createTree({ title: 'Semantic tree', pane: 'semantic',
+    onRename: (id, text) => apply(() => M.setField(label, id, 'label', text)),
+    toggleOnClick: n => n.kind === 'group',
+    rowAction: n => ({ note: Boolean(n.summary?.trim() || n.notes?.trim() || (n.id === label.rootId && label.notes?.trim())) }),
+    onAction: id => { detailFor = detailFor === id ? null : id; update(); },
+    drop: { accepts: from => from === 'compact' || from === 'semantic', inside: n => n.kind === 'group', onDrop: dropOnTree },
     label: n => n.label, tagOf: n => n.kind === 'group' ? (n.id === label.rootId ? '▣' : '▤') : '•',
     rowClass: n => `${n.kind === 'group' ? 'group' : 'leaf'}${n.id === target ? ' target' : ''}`,
-    extras: n => n.kind === 'dom' ? [h('span', { class: 'badge' }, n.display_role || '')] : n.id === target ? [h('span', { class: 'badge' }, 'adding here')] : [],
-    onPick: (ids, how) => choose('semantic', ids, how), onOpen: id => openGroup(id) });
-  const rawTree = createTree({ title: 'Raw DOM',
+    extras: n => n.kind === 'dom' ? [h('span', { class: 'badge' }, n.display_role || '')] : [],
+    onPick: (ids, how) => choose('semantic', ids, how) });
+  const rawTree = createTree({ title: 'Raw DOM', pane: 'raw',
     rowClass: n => n.compact.disposition === 'retained' ? '' : 'folded',
     extras: n => n.compact.disposition === 'retained' ? [] : [h('span', { class: 'badge' }, n.compact.disposition)],
     onPick: ids => { const match = compactFor(ids[0], rawById, ctx.byId); rawTree.setSelection([ids[0]]); if (match) choose('compact', [match], {}, 'raw'); } });
@@ -219,7 +325,8 @@ async function showPage(queue, page, groupName) {
   rawTree.element.hidden = true;
 
   const wire = createWireframe();
-  const detail = h('div', { class: 'detail' });
+  const detail = h('div', { class: 'detail node-detail', hidden: true });
+  let detailFor = null; // the tree node whose summary and notes are open
   const sourceDetail = h('div', { class: 'detail' });
   const coverage = h('details', { class: 'coverage', open: true });
   const problems = h('div', { class: 'problems' });
@@ -227,7 +334,7 @@ async function showPage(queue, page, groupName) {
   semanticTree.element.append(detail, problems, coverage);
 
   // ---- toolbar
-  const groupInput = h('input', { type: 'text', placeholder: 'Group label (G), Enter to group', 'aria-label': 'Group label',
+  const groupInput = h('input', { type: 'text', placeholder: 'Group label (blank: first element’s text)', 'aria-label': 'Group label',
     onkeydown: event => { if (event.key === 'Enter') { event.preventDefault(); groupSelection(event.shiftKey); } if (event.key === 'Escape') groupInput.blur(); } });
   const moveSelect = h('select', { 'aria-label': 'Move selection to group', onchange: event => {
     const to = event.target.value; event.target.value = '';
@@ -237,23 +344,22 @@ async function showPage(queue, page, groupName) {
   const compactButtons = [
     button('Add', 'Add the selected nodes to the target group as units (A)', () => placeSelection('add'), 'compact'),
     button('Add children', 'Add each child of the selection as its own unit (C)', () => placeSelection('children'), 'compact'),
-    button('Group', 'Group the selection under the label typed at left (G, then Enter)', () => groupSelection(false), 'compact'),
+    button('Group', 'Group the selection, named by the label box or else the first element’s text (G)', () => groupSelection(false), 'compact'),
     button('Group children', 'New group with each child as a unit (Shift+Enter in the label box)', () => groupSelection(true), 'compact'),
     button('One unit', 'Make the selected node one unit, merging any units inside it (U)', () => placeSelection('unit'), 'compact-one'),
     button('Skip', 'Mark as not content, with a reason (S)', () => skipSelection(), 'compact'),
     button('Unskip', 'Remove the skip', () => apply(() => M.unskip(label, selection.ids)), 'compact'),
   ];
   const treeButtons = [
-    button('Group', 'Wrap the selected siblings in a new group (G, then Enter)', () => groupSelection(false), 'tree'),
-    button('Open', 'Add new units inside this group (O or double-click)', () => openGroup(selection.ids[0]), 'tree-group'),
+    button('Group', 'Wrap the selected siblings in a new group, named by the label box or the first node (G)', () => groupSelection(false), 'tree'),
     button('Unwrap', 'Replace the group by its children', () => apply(() => selection.ids.forEach(id => M.unwrap(label, id))), 'tree'),
-    button('Merge', 'Merge the selected groups into the first', () => apply(() => M.merge(label, selection.ids)), 'tree'),
+    button('Merge groups', 'Merge the selected groups into the first', () => apply(() => M.merge(label, selection.ids)), 'tree'),
     button('↑', 'Move up (Alt+↑)', () => apply(() => M.move(label, selection.ids, -1)), 'tree'),
     button('↓', 'Move down (Alt+↓)', () => apply(() => M.move(label, selection.ids, 1)), 'tree'),
     button('→', 'Into the group above (Alt+→)', () => apply(() => M.indent(label, selection.ids)), 'tree'),
     button('←', 'Out of the current group (Alt+←)', () => apply(() => M.outdent(label, selection.ids)), 'tree'),
     moveSelect,
-    button('Split', 'Split a unit into its children', () => apply(() => selection.ids.forEach(id => M.splitLeaf(label, ctx, id))), 'tree'),
+    button('Split into children', 'Split a unit into its children', () => apply(() => selection.ids.forEach(id => M.splitLeaf(label, ctx, id))), 'tree'),
     button('Remove', 'Remove from the tree; units return to unplaced (Delete)', () => apply(() => { M.remove(label, selection.ids); selection = { pane: null, ids: [] }; }), 'tree'),
   ];
   const targetLine = h('span', { class: 'target-line' });
@@ -295,6 +401,11 @@ async function showPage(queue, page, groupName) {
     if (how.add && !how.range) next = ids.every(id => current.includes(id)) ? current.filter(id => !ids.includes(id)) : [...new Set([...current, ...ids])];
     else if (how.range) next = [...new Set([...current, ...ids])];
     selection = { pane, ids: next };
+    // The last tree node clicked sets where Add / Group put things: that group, or the unit's group.
+    if (pane === 'semantic' && ids.length) {
+      const last = label.nodes[ids[ids.length - 1]];
+      if (last) target = last.kind === 'group' ? last.id : M.parents(label).get(last.id);
+    }
     if (pane === 'compact' && next.length && from !== 'compact') { compactTree.reveal(next[0]); wire.scrollTo(next[0]); }
     if (pane === 'compact' && next.length && from === 'compact') wire.scrollTo(next[next.length - 1]);
     if (pane === 'compact' && next.length === 1 && !rawTree.element.hidden) { rawTree.setSelection([next[0]]); rawTree.reveal(next[0]); }
@@ -359,10 +470,10 @@ async function showPage(queue, page, groupName) {
       selection = { pane: null, ids: [] };
     });
   }
+  // The label typed in the box, or else the first selected element's text (usually its heading).
   function groupSelection(children) {
-    const text = groupInput.value.trim();
-    if (!text) { groupInput.focus(); return say('Type a group label, then press Enter.'); }
     if (!selection.ids.length) return say('Select nodes to group first.', true);
+    const text = groupInput.value.trim() || firstSelectedText();
     let created = null;
     apply(() => {
       created = selection.pane === 'compact' ? M.groupCompact(label, ctx, selection.ids, target, text, children)
@@ -370,20 +481,38 @@ async function showPage(queue, page, groupName) {
     });
     if (created && label.nodes[created]) { groupInput.value = ''; semanticTree.expand(created); choose('semantic', [created]); }
   }
+  function firstSelectedText() {
+    if (selection.pane === 'compact') {
+      const first = [...selection.ids].sort((a, b) => ctx.order.get(a) - ctx.order.get(b))[0];
+      return M.unitText(ctx, first).slice(0, 120);
+    }
+    const order = [];
+    const walk = id => { order.push(id); label.nodes[id].children.forEach(walk); };
+    walk(label.rootId);
+    return label.nodes[order.find(id => selection.ids.includes(id))].label;
+  }
   function skipSelection() {
     if (selection.pane !== 'compact') return say('Select compressed nodes to skip.', true);
     const reason = prompt('Why skip? (e.g. decorative, advertisement, hidden)', 'not content');
     if (reason === null) return;
     apply(() => { M.skip(label, ctx, selection.ids, reason); selection = { pane: null, ids: [] }; });
   }
-  function openGroup(id) {
-    const node = label.nodes[id];
-    if (!node) return;
-    if (node.kind !== 'group') return say('Only groups can be opened. Use Split to break a unit apart.', true);
-    target = id;
-    semanticTree.expand(id);
-    say(`Adding to "${node.label}".`);
-    update();
+  // A drop on the tree: into a group, or before/after a node in its group. Compressed nodes become units there.
+  function dropOnTree(payload, { id, zone }) {
+    const parentMap = M.parents(label);
+    let parent = label.rootId, before = null;
+    if (zone === 'inside') parent = id;
+    else if (zone !== 'end') {
+      parent = parentMap.get(id);
+      const siblings = label.nodes[parent].children;
+      before = zone === 'before' ? id : siblings[siblings.indexOf(id) + 1] ?? null;
+    }
+    apply(() => {
+      if (payload.pane === 'compact') { M.addLeaves(label, ctx, payload.ids, parent, before); selection = { pane: null, ids: [] }; }
+      else M.moveTo(label, payload.ids, parent, before);
+      target = parent;
+      semanticTree.expand(parent);
+    });
   }
 
   async function submit() {
@@ -411,11 +540,11 @@ async function showPage(queue, page, groupName) {
       if (moves[event.key]) { apply(moves[event.key]); event.preventDefault(); }
       return;
     }
-    const keys = { g: () => groupInput.focus(), a: () => placeSelection('add'), c: () => placeSelection('children'),
-      u: () => placeSelection('unit'), s: () => skipSelection(), o: () => tree && openGroup(selection.ids[0]),
+    const keys = { g: () => groupSelection(false), a: () => placeSelection('add'), c: () => placeSelection('children'),
+      u: () => placeSelection('unit'), s: () => skipSelection(),
       Delete: () => tree && apply(() => { M.remove(label, selection.ids); selection = { pane: null, ids: [] }; }),
       Backspace: () => tree && apply(() => { M.remove(label, selection.ids); selection = { pane: null, ids: [] }; }),
-      Escape: () => { if (selection.ids.length) { selection = { pane: null, ids: [] }; update(); } else if (target !== label.rootId) openGroup(label.rootId); } };
+      Escape: () => { if (selection.ids.length) selection = { pane: null, ids: [] }; else target = label.rootId; update(); } };
     const run = keys[event.key];
     if (run) { run(); event.preventDefault(); }
   });
@@ -425,12 +554,11 @@ async function showPage(queue, page, groupName) {
     placementMap = M.placement(label, ctx);
     for (const n of Object.values(label.nodes)) if (n.kind === 'group' && !knownGroups.has(n.id)) { knownGroups.add(n.id); semanticTree.expand(n.id); }
 
-    // Compressed pane: inside an opened group, only that group's region; optionally without placed nodes.
-    const region = target === label.rootId ? [] : leavesUnder(target).filter(id => ctx.byId.has(id));
-    const visible = hidePlaced ? model.compact.nodes.filter(n => !placementMap.has(n.id) || region.length) : model.compact.nodes;
+    // Compressed pane, optionally without nodes already placed or skipped.
+    const visible = hidePlaced ? model.compact.nodes.filter(n => !placementMap.has(n.id)) : model.compact.nodes;
     const keep = new Set(visible.map(n => n.id));
     compactTree.setData(visible.map(n => ({ ...n, children: n.children.filter(c => keep.has(c)) })),
-      region.length ? region : model.compact.roots.filter(r => keep.has(r)));
+      model.compact.roots.filter(r => keep.has(r)));
     const relatedCompact = selection.pane === 'semantic' ? selection.ids.filter(id => label.nodes[id]).flatMap(leavesUnder) : [];
     compactTree.setSelection(selection.pane === 'compact' ? selection.ids : [], relatedCompact);
     semanticTree.setData(Object.values(label.nodes), [label.rootId]);
@@ -443,15 +571,14 @@ async function showPage(queue, page, groupName) {
     for (const b of [...compactButtons, ...treeButtons]) {
       const kind = b.dataset.kind;
       b.disabled = !selection.ids.length || (kind?.startsWith('compact') && selection.pane !== 'compact') || (kind?.startsWith('tree') && selection.pane !== 'semantic')
-        || (kind === 'compact-one' && selection.ids.length !== 1) || (kind === 'tree-group' && label.nodes[selection.ids[0]]?.kind !== 'group');
+        || (kind === 'compact-one' && selection.ids.length !== 1);
     }
     undoButton.disabled = !undoStack.length;
     redoButton.disabled = !redoStack.length;
     const path = [];
     const parentMap = M.parents(label);
     for (let id = target; id; id = parentMap.get(id)) path.unshift(label.nodes[id].label);
-    targetLine.replaceChildren('Adding to: ', h('strong', {}, path.join(' › ')),
-      target !== label.rootId ? h('button', { type: 'button', class: 'link', onclick: () => openGroup(parentMap.get(target)) }, 'Up') : '');
+    targetLine.replaceChildren('Adding to: ', h('strong', {}, path.join(' › ')));
     submitButton.textContent = status === 'submitted' ? 'Submitted ✓' : 'Submit';
     renderDetail();
     renderProblems();
@@ -475,16 +602,17 @@ async function showPage(queue, page, groupName) {
     } else {
       sourceDetail.replaceChildren(h('p', { class: 'muted' }, selection.pane === 'compact' ? `${selection.ids.length} nodes selected.` : 'Click nodes here or draw a box on the wireframe.'));
     }
-    // Editable fields for one tree node.
-    if (selection.pane !== 'semantic' || selection.ids.length !== 1) {
-      detail.replaceChildren(h('p', { class: 'muted' }, selection.pane === 'semantic' ? `${selection.ids.length} tree nodes selected.` : 'Select a tree node to edit its label and notes.'));
-      return;
-    }
-    const node = label.nodes[selection.ids[0]];
-    const field = (name, text, multiline) => h('label', { class: 'field' }, text, h(multiline ? 'textarea' : 'input', {
-      rows: multiline ? 2 : null, value: multiline ? null : (node[name] || ''),
-      onchange: event => apply(() => M.setField(label, node.id, name, event.target.value)) }, multiline ? (node[name] || '') : null));
-    const parts = [field('label', 'Label'), field('summary', 'Summary', true), field('notes', 'Notes', true)];
+    // Summary and notes for the node whose row button was clicked; hidden otherwise.
+    const node = label.nodes[detailFor];
+    detail.hidden = !node;
+    if (!node) { detailFor = null; return; }
+    const field = (name, text, hint) => h('label', { class: 'field' }, text, h('textarea', { rows: 3, placeholder: hint,
+      onchange: event => apply(() => M.setField(label, node.id, name, event.target.value)) }, node[name] || ''));
+    const parts = [
+      h('div', { class: 'detail-head' }, h('strong', {}, node.label),
+        h('button', { type: 'button', class: 'link', 'aria-label': 'Close', onclick: () => { detailFor = null; update(); } }, '×')),
+      field('summary', 'Summary', 'What this group contains, for a reader (optional).'),
+      field('notes', 'Notes', 'Why you grouped or labeled it this way.')];
     if (node.id === label.rootId) parts.push(h('label', { class: 'field' }, 'Page notes', h('textarea', { rows: 2,
       onchange: event => apply(() => { label.notes = event.target.value; }) }, label.notes || '')));
     if (node.kind === 'dom') parts.push(h('p', { class: 'muted' }, `Unit <${ctx.byId.get(node.sourceRefs[0])?.tag}> ${node.sourceRefs[0]}: ${(node.reading_text || '').slice(0, 200)}`));
@@ -495,9 +623,25 @@ async function showPage(queue, page, groupName) {
     const { errors, warnings } = M.validateLabel(label, ctx);
     problems.replaceChildren(...errors.map(e => h('p', { class: 'error' }, e)), ...warnings.filter(w => !/not placed/.test(w)).map(w => h('p', { class: 'muted' }, w)));
     const missing = M.uncovered(label, ctx);
-    coverage.replaceChildren(h('summary', {}, missing.length ? `Not placed: ${missing.length} nodes with content` : 'Everything with content is placed or skipped ✓'),
-      h('ul', {}, ...missing.slice(0, 200).map(id => h('li', {}, h('button', { type: 'button', class: 'link',
-        onclick: () => choose('compact', [id], {}, 'coverage') }, `<${ctx.byId.get(id).tag}> ${shortText(ctx.byId.get(id)).slice(0, 80)}`)))));
+    coverage.replaceChildren(h('summary', {}, missing.length ? `Unplaced DOM nodes: ${missing.length}` : 'Unplaced DOM nodes: none ✓'),
+      missing.length ? h('button', { type: 'button', class: 'skip-all', title: 'Skip every node listed here, except ones holding a placed unit',
+        onclick: () => {
+          const reason = prompt('Why skip all of these?', 'not content');
+          if (reason === null) return;
+          let left = 0;
+          apply(() => { left = M.skipUncovered(label, ctx, reason); });
+          if (left) say(`${left} nodes hold placed units, so they can't be skipped; place or skip them individually.`, true);
+        } }, 'Skip all') : null,
+      // Entries can be clicked (select) or dragged onto the tree like compressed DOM rows.
+      h('ul', {}, ...missing.slice(0, 200).map(id => h('li', {}, h('button', { type: 'button', class: 'link', draggable: 'true',
+        onclick: () => choose('compact', [id], {}, 'coverage'),
+        ondragstart: event => {
+          const chosen = selection.pane === 'compact' && selection.ids.includes(id) ? selection.ids : [id];
+          dragging = { pane: 'compact', ids: chosen };
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', chosen.join(' '));
+        },
+        ondragend: () => { dragging = null; } }, `<${ctx.byId.get(id).tag}> ${shortText(ctx.byId.get(id)).slice(0, 80)}`)))));
   }
 
   // ---- wireframe
@@ -507,11 +651,22 @@ async function showPage(queue, page, groupName) {
     const els = new Map();
     const page = h('div', { class: 'wire-page', style: `width:${size.width}px;height:${size.height}px` });
     for (const b of [...list].sort((a, z) => z.rect.width * z.rect.height - a.rect.width * a.rect.height)) {
-      const style = `left:${b.rect.x}px;top:${b.rect.y}px;width:${b.rect.width}px;height:${b.rect.height}px;` +
-        (b.style ? `font-size:${b.style.fontSize}px;${b.style.bold ? 'font-weight:600;' : ''}` : '');
-      const el = h('div', { class: 'box', style, 'data-id': b.id }, b.text ? b.text.slice(0, 300) : '');
+      const style = `left:${b.rect.x}px;top:${b.rect.y}px;width:${b.rect.width}px;height:${b.rect.height}px;`;
+      const el = h('div', { class: 'box', style, 'data-id': b.id });
       els.set(b.id, el);
       page.append(el);
+    }
+    // Text sits on its recorded line boxes, squeezed or stretched to the recorded width so a different font
+    // cannot push words out of place or cut them off.
+    const measure = document.createElement('canvas').getContext('2d');
+    for (const line of textLines(model)) {
+      measure.font = `${line.bold ? 600 : 400} ${line.fontSize}px system-ui, sans-serif`;
+      // Squeeze up to 40% (sites often use narrower fonts than ours); past that, drop trailing words.
+      let text = line.text;
+      while (text.includes(' ') && measure.measureText(text).width * 0.6 > line.width) text = text.slice(0, text.lastIndexOf(' '));
+      const squeeze = Math.min(1.4, Math.max(0.6, line.width / (measure.measureText(text).width || 1)));
+      page.append(h('div', { class: 'line', style: `left:${line.x}px;top:${line.y}px;height:${line.height}px;line-height:${line.height}px;` +
+        `font-size:${line.fontSize}px;${line.bold ? 'font-weight:600;' : ''}transform:scaleX(${squeeze.toFixed(3)})` }, text));
     }
     const marquee = h('div', { class: 'marquee', hidden: true });
     const canvas = h('div', { class: 'wire-canvas' }, page, marquee);
