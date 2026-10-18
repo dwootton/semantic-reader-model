@@ -147,7 +147,9 @@ def render(browser, page_id, out_dir):
     context = browser.new_context(viewport=viewport, device_scale_factor=1, java_script_enabled=True,
                                   service_workers="block", accept_downloads=False, locale="en-US", timezone_id="UTC")
     blocked = [0]
-    context.route_web_socket("**/*", lambda socket: socket.close())
+    # A handler that never connects leaves sockets mocked (no traffic). Don't call socket.close() here:
+    # the sync API deadlocks inside its own event-loop callback.
+    context.route_web_socket("**/*", lambda socket: None)
     context.add_init_script(path=str(SUPPRESSION))
     page = context.new_page()
 

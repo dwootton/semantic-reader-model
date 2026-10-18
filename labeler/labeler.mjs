@@ -496,6 +496,9 @@ async function showPage(queue, page, groupName) {
     if (pane === 'compact' && next.length && from !== 'compact') { compactTree.reveal(next[0]); wire.scrollTo(next[0]); }
     if (pane === 'compact' && next.length && from === 'compact') wire.scrollTo(next[next.length - 1]);
     update();
+    // Open the semantic tree down to the unit holding the picked element, even inside closed groups.
+    const unit = pane === 'compact' && next.length && unitFor(next[next.length - 1]);
+    if (unit) semanticTree.reveal(unit);
   }
 
   function apply(operation) {
