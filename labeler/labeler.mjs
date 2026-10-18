@@ -43,9 +43,16 @@ async function main() {
 
 // ---------------------------------------------------------------- picker
 
+// While screenshots are still being rendered, pages that have one come first (queue order kept within each set).
+// ponytail: temporary ordering; once every page is rendered this is the plain queue order again.
+const renderedPages = async () => new Set(await getJson('/api/renders').catch(() => []));
+const renderedFirst = (list, rendered) => [...list.filter(e => rendered.has(e.page)), ...list.filter(e => !rendered.has(e.page))];
+
 async function showPicker(queue) {
   const labels = await getJson('/api/labels').catch(() => ({}));
   const status = entry => labels[entry.page] || 'untouched';
+  const rendered = await renderedPages();
+  const ordered = Object.fromEntries(Object.entries(queue.groups).map(([name, list]) => [name, renderedFirst(list, rendered)]));
   let group = queue.groups[params.get('group')] ? params.get('group') : 'main';
   let query = '';
   crumb.textContent = 'Queue';
@@ -59,13 +66,13 @@ async function showPicker(queue) {
   const search = h('input', { type: 'search', placeholder: 'Search URL or category', 'aria-label': 'Search pages',
     oninput: event => { query = event.target.value.trim().toLowerCase(); render(); } });
   const next = h('button', { type: 'button', class: 'primary', onclick: () => {
-    const entry = queue.groups[group].find(e => status(e) === 'untouched');
+    const entry = ordered[group].find(e => status(e) === 'untouched');
     if (entry) location.href = pageHref(entry.page, group);
   } }, 'Next page');
 
   function render() {
     tabs.forEach(tab => tab.setAttribute('aria-pressed', String(tab.dataset.group === group)));
-    const entries = queue.groups[group];
+    const entries = ordered[group];
     const shown = entries.filter(e => !query || (e.url || '').toLowerCase().includes(query) || e.category.toLowerCase().includes(query));
     count.textContent = `${shown.length} shown · ${entries.filter(e => status(e) === 'untouched').length} untouched`;
     body.replaceChildren(...shown.map(e => h('tr', {},
@@ -286,13 +293,14 @@ function createTree({ title, pane, label = shortText, tagOf = n => `<${n.tag}>`,
 
 async function showPage(queue, page, groupName) {
   const group = queue.groups[groupName] ? groupName : 'main';
-  const entries = queue.groups[group];
+  const entries = renderedFirst(queue.groups[group], await renderedPages());
   const index = entries.findIndex(e => e.page === page);
   app.replaceChildren(h('p', { class: 'muted' }, 'Loading page…'));
-  let model, saved = null;
+  let model, saved = null, render = null;
   try {
     model = await loadPage(page);
     saved = await getJson(`/api/labels/${page}`);
+    render = await getJson(`/api/render/${page}`).catch(() => null); // a first-screen screenshot, if rendered
   } catch (error) {
     app.replaceChildren(h('p', { class: 'error' }, `Could not load ${page}: ${error.message}`), h('a', { href: `/?group=${group}` }, 'Back to queue'));
     return;
@@ -433,7 +441,7 @@ async function showPage(queue, page, groupName) {
         h('div', { class: 'menubar' }, collapseBox, hideBox,
           h('span', { class: 'menu-sep' }), ...compactButtons, clearButtons[0], h('span', { class: 'place-group' }, ...placeButtons)),
         h('div', { class: 'dom-split' },
-          h('div', { class: 'split-col' }, h('div', { class: 'split-title' }, h('span', {}, 'Wireframe'), wire.zoomBar), wire.view),
+          h('div', { class: 'split-col' }, h('div', { class: 'split-title' }, wire.title, wire.zoomBar), wire.view),
           h('div', { class: 'split-col' }, h('div', { class: 'split-title' }, 'Compressed DOM'), compactTree.body)),
         sourceDetail),
       splitter,
@@ -713,6 +721,14 @@ async function showPage(queue, page, groupName) {
     const size = pageSize(list, model.viewport || { width: 1365, height: 900 });
     const els = new Map();
     const page = h('div', { class: 'wire-page', style: `width:${size.width}px;height:${size.height}px` });
+    // A first-screen screenshot (labeler/render_pages.py) sits under the boxes, in the same page coordinates.
+    // It is moved up by the measured offset (how far the live page sits below the capture) so the two line up.
+    const fold = (model.viewport || { height: 900 }).height;
+    const shot = render && !render.error;
+    if (shot) {
+      page.append(h('img', { class: 'wire-shot', alt: '', src: `/corpus/renders/${model.page}.jpg`,
+        style: `top:${-(render.offset || 0)}px;width:${size.width}px;height:${fold}px` }));
+    }
     for (const b of [...list].sort((a, z) => z.rect.width * z.rect.height - a.rect.width * a.rect.height)) {
       const style = `left:${b.rect.x}px;top:${b.rect.y}px;width:${b.rect.width}px;height:${b.rect.height}px;`;
       const el = h('div', { class: 'box', style, 'data-id': b.id });
@@ -728,7 +744,7 @@ async function showPage(queue, page, groupName) {
       let text = line.text;
       while (text.includes(' ') && measure.measureText(text).width * 0.6 > line.width) text = text.slice(0, text.lastIndexOf(' '));
       const squeeze = Math.min(1.4, Math.max(0.6, line.width / (measure.measureText(text).width || 1)));
-      page.append(h('div', { class: 'line', style: `left:${line.x}px;top:${line.y}px;height:${line.height}px;line-height:${line.height}px;` +
+      page.append(h('div', { class: `line${line.y < fold ? ' fold' : ''}`, style: `left:${line.x}px;top:${line.y}px;height:${line.height}px;line-height:${line.height}px;` +
         `font-size:${line.fontSize}px;${line.bold ? 'font-weight:600;' : ''}transform:scaleX(${squeeze.toFixed(3)})` }, text));
     }
     const canvas = h('div', { class: 'wire-canvas' }, page);
@@ -756,6 +772,24 @@ async function showPage(queue, page, groupName) {
       scroller.scrollTop = py * scale - ay;
       zoomLabel.textContent = zoom === 1 ? 'Fit' : `${Math.round(zoom * 100)}%`;
     }
+    // Screenshot | Wireframe toggle with the alignment score; the choice is remembered per browser.
+    let mode = 'shot';
+    try { mode = localStorage.getItem('labeler.wireMode') || 'shot'; } catch { /* storage unavailable */ }
+    const modeButtons = ['shot', 'wire'].map(value => h('button', { type: 'button', class: 'segment', 'data-mode': value,
+      onclick: () => setMode(value) }, value === 'shot' ? 'Screenshot' : 'Wireframe'));
+    function setMode(value) {
+      mode = value;
+      scroller.classList.toggle('shot', shot && mode === 'shot');
+      modeButtons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
+      try { localStorage.setItem('labeler.wireMode', mode); } catch { /* storage unavailable */ }
+    }
+    setMode(mode);
+    const score = shot ? h('span', { class: 'shot-score', title: render.anchors
+      ? `${render.aligned} of ${render.anchors} text anchors in the first screen line up with the capture` +
+        ` · offset ${render.offset || 0} px · rendered ${(render.rendered_at || '').slice(0, 10)}`
+      : 'No text in the first screen to compare with the capture' },
+    render.score == null ? 'not measured' : `${Math.round(render.score * 100)}% aligned`) : null;
+    const title = shot ? h('div', { class: 'shot-bar' }, h('div', { class: 'segmented' }, ...modeButtons), score) : h('span', {}, 'Wireframe');
     const zoomBar = h('div', { class: 'zoom-bar' },
       h('button', { type: 'button', class: 'icon-button', title: 'Zoom out', 'aria-label': 'Zoom out',
         onclick: () => setZoom([...ZOOMS].reverse().find(z => z < zoom) ?? 1) }, '−'),
@@ -798,7 +832,7 @@ async function showPage(queue, page, groupName) {
     });
     scroller.title = 'Click to select (Alt: parent) · drag or scroll to pan · ⌘/Ctrl+scroll or pinch to zoom';
     return {
-      view: scroller, zoomBar,
+      view: scroller, zoomBar, title,
       // Put a node's box at the top of the wireframe; false when it has no box.
       alignTop(id) {
         const r = byBox.get(id);

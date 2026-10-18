@@ -162,3 +162,16 @@ main:has(.workspace) { padding: 10px 14px; }
 .place-group { margin-left: auto; display: flex; gap: 5px; flex-wrap: nowrap; }
 .place-button { display: inline-flex; align-items: center; gap: 5px; }
 .place-button svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Screenshot mode: the first-screen screenshot under the element boxes; wireframe text hidden over it. */
+.wire-shot { position: absolute; left: 0; display: none; pointer-events: none; user-select: none; }
+.wire.shot .wire-shot { display: block; }
+.wire.shot .line.fold { display: none; }
+.wire.shot .box { border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+.wire.shot .box.leaf { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.shot-bar { display: flex; align-items: center; gap: 8px; text-transform: none; letter-spacing: 0; font-weight: 400; }
+.segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.segment { border: none; border-radius: 0; padding: 1px 8px; font-size: 11.5px; background: var(--panel); color: var(--muted); }
+.segment + .segment { border-left: 1px solid var(--line); }
+.segment[aria-pressed="true"] { background: var(--accent-bg); color: var(--text); }
+.shot-score { font-size: 11.5px; color: var(--muted); white-space: nowrap; }

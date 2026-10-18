@@ -25,6 +25,9 @@ class ServerTest(unittest.TestCase):
             {"id": "0", "tag": "html", "parent": None}, {"id": "1", "tag": "body", "parent": "0"},
             {"id": "2", "tag": "p", "parent": "1"}]))
         (root / "corpus/queue.json").write_text('{"groups": {}}')
+        (root / "corpus/renders" / SITE).mkdir(parents=True)
+        (root / "corpus/renders" / SITE / f"{PAGE}.jpg").write_bytes(b"\xff\xd8\xff jpeg")
+        (root / "corpus/renders/index.json").write_text(json.dumps({f"{SITE}/{PAGE}": {"score": 0.97, "offset": 0}}))
         (root / "labels").mkdir()
         (root / "labels/x.json").write_text(json.dumps({"page": f"{SITE}/{PAGE}", "provenance": {"status": "submitted"}}))
         handler = type("TestHandler", (Handler,), {"corpus": root / "corpus", "labels": root / "labels"})
@@ -62,6 +65,16 @@ class ServerTest(unittest.TestCase):
         connection.request("GET", "/", headers={"Host": "evil.example"})
         self.assertEqual(connection.getresponse().status, 403)
         self.assertEqual(self.request("GET", "/", headers={"Origin": "http://evil.example"})[0], 403)
+
+    def test_render_image_and_entry(self):
+        status, kind, body = self.request("GET", f"/corpus/renders/{SITE}/{PAGE}.jpg")
+        self.assertEqual((status, kind, body[:3]), (200, "image/jpeg", b"\xff\xd8\xff"))
+        self.assertEqual(json.loads(self.request("GET", f"/api/render/{SITE}/{PAGE}")[2]), {"score": 0.97, "offset": 0})
+        self.assertIsNone(json.loads(self.request("GET", f"/api/render/{SITE}/{'c' * 24}")[2]), "no render yet")
+        self.assertEqual(json.loads(self.request("GET", "/api/renders")[2]), [f"{SITE}/{PAGE}"])
+        for path in ["/corpus/renders/index.json", f"/corpus/renders/{SITE}/{PAGE}.check.jpg", "/corpus/renders/../queue.json"]:
+            self.assertEqual(self.request("GET", path)[0], 404, path)
+        self.assertEqual(self.request("GET", "/api/render/../x")[0], 400)
 
     def test_label_status(self):
         # An old "submitted" label reads as complete.

@@ -27,6 +27,16 @@ The page bar shows ← Queue, previous/next arrows, the page title, its category
 4. **Unplaced DOM nodes** lists content not yet placed or ignored; click an entry to select it, drag it onto the tree to place it, or **Ignore all** to ignore everything listed at once (with one reason; nodes holding a placed unit are left for you). Errors show under the semantic tree; a page with errors stays in progress.
 There is no submit: every change autosaves about a second later (⌘Z / ⇧⌘Z undo and redo), and the save status shows whether the page is in progress or complete. A page becomes complete once nothing is unplaced and there are no errors; the server re-checks a complete label against the page's source map and keeps it as in progress if that fails.
 
+## Screenshots
+
+The corpus was captured without screenshots, so `labeler/render_pages.py` renders each page's first screen from its live URL under the capture's own conditions: the collector's `capture_media_safety.js` (copied unchanged: Arial everywhere, media hidden behind grey placeholders, no background images), the same 1365×900 viewport, and only the site's own requests. That makes the screenshot line up with the captured element boxes.
+
+```sh
+uv run --with playwright==1.62.0 --with pillow python labeler/render_pages.py --group main --count 100000   # resumable; --check adds overlays
+```
+
+In the wireframe pane, **Screenshot | Wireframe** switches between the screenshot (first 900 px, wireframe below it) and the plain wireframe; the choice is remembered. Clicking and selection always use the captured boxes, so they are exact either way. The score beside the toggle says how far the screenshot can be trusted: the share of the capture's first-screen text elements (unique tag + text) found on the live page at the captured position (±4 px, after one shared vertical offset). A low score means the live page has changed or blocks rendering; switch to Wireframe.
+
 ## Output
 
 - `runs/labels/<site>__<page>.json`: the semantic tree in the inspector's variant shape (`rootId`, groups and units whose `sourceRefs` are raw DOM IDs) plus `provenance` (status, labeler, timestamps, skips, notes, capture URL and document hash).

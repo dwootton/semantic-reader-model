@@ -196,6 +196,8 @@ These labels are a precursor to deciding what a good tree is, so the tool impose
 
 Later on 2026-10-05: the wireframe lasso was replaced by drag-to-pan (click still selects, Alt-click the parent) plus a zoom menu and ⌘/Ctrl+scroll zoom; One unit was folded into Add (Add merges units already inside a node); Skip was renamed Ignore; Group each and Move to were removed.
 
+**Screenshots (2026-10-18).** The main corpus has geometry but no pixels: its collector deliberately saved none, and measured each page after its media-safety script had forced Arial, hidden media and stripped backgrounds. `labeler/render_pages.py` renders the live URL under those same conditions (the script is copied unchanged as `labeler/capture_media_safety.js`) and scores alignment with the captured geometry; on the first 30 queue pages 19 scored ≥ 0.8, most exactly 1.0, versus 3 with a normal render. The editor always shows the screenshot when one exists, with the score and a Screenshot | Wireframe toggle; nothing is skipped or thresholded. Banana bread differs: its vision-study pipeline captured real pixels and DOM together.
+
 Phases 3 and 4 were swapped on 2026-10-04 so the editor is settled before anything is built around it. A whole-label checker (unit text matches DOM text, regions, reading order) can run later as a standalone script over submitted labels; it is not built into the editor.
 
 Not planned: real screenshots for the 12 vision-study sites, and paid cloud models. The queue has two groups, main and pro.

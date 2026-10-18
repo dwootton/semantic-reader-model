@@ -5,6 +5,9 @@ Routes:
   GET  /inspector/model.mjs                shared tree helpers reused from the inspector
   GET  /corpus/queue.json                  page order (labeler/queue_order.py)
   GET  /corpus/pages/<site>/<page>/<file>  one of the six desktop capture files
+  GET  /corpus/renders/<site>/<page>.jpg    first-screen screenshot (labeler/render_pages.py)
+  GET  /api/render/<site>/<page>           that page's render entry (alignment score, offset), or null
+  GET  /api/renders                        ids of pages that have a screenshot
   GET  /api/labels                         {page: status} for label files in runs/labels/
   GET  /api/labels/<site>/<page>           one saved label
   POST /api/labels                         autosave a label as in_progress or complete (complete is re-validated)
@@ -30,8 +33,9 @@ from inspector.build_data import validate  # noqa: E402
 
 INSPECTOR_MODULES = {"model.mjs"}
 TYPES = {".html": "text/html; charset=utf-8", ".mjs": "text/javascript; charset=utf-8",
-         ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8"}
+         ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".jpg": "image/jpeg"}
 PAGE_FILE = re.compile(r"/corpus/pages/([0-9a-f]{24})/([0-9a-f]{24})/(.+)")
+RENDER_FILE = re.compile(r"/corpus/renders/([0-9a-f]{24})/([0-9a-f]{24})\.jpg")
 PAGE_ID = re.compile(r"[0-9a-f]{24}/[0-9a-f]{24}")
 MAX_POST = 32 << 20
 # A page with no label file is untouched; earlier labels used draft/submitted.
@@ -92,6 +96,9 @@ class Handler(BaseHTTPRequestHandler):
             return ROOT / "inspector" / path.removeprefix("/inspector/")
         if path == "/corpus/queue.json":
             return self.corpus / "queue.json"
+        match = RENDER_FILE.fullmatch(path)
+        if match:
+            return self.corpus / "renders" / match[1] / f"{match[2]}.jpg"
         match = PAGE_FILE.fullmatch(path)
         if match and match[3] in CAPTURE_FILES:
             return self.corpus / "public-research-v1/captures" / match[1] / match[2] / STATE / match[3]
@@ -103,6 +110,16 @@ class Handler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         if path == "/api/labels":
             return self._json(200, self.label_status())
+        if path == "/api/renders":
+            index = self.corpus / "renders/index.json"
+            done = json.loads(index.read_text()) if index.exists() else {}
+            return self._json(200, sorted(page for page, entry in done.items() if not entry.get("error")))
+        if path.startswith("/api/render/"):
+            page = path.removeprefix("/api/render/")
+            if not PAGE_ID.fullmatch(page):
+                return self._json(400, {"error": "Unknown page id."})
+            index = self.corpus / "renders/index.json"  # re-read each time: the renderer may still be adding pages
+            return self._json(200, json.loads(index.read_text()).get(page) if index.exists() else None)
         if path.startswith("/api/labels/"):
             try:
                 label = self.label_path(path.removeprefix("/api/labels/"))
