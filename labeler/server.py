@@ -5,9 +5,9 @@ Routes:
   GET  /inspector/model.mjs                shared tree helpers reused from the inspector
   GET  /corpus/queue.json                  page order (labeler/queue_order.py)
   GET  /corpus/pages/<site>/<page>/<file>  one of the six desktop capture files
-  GET  /corpus/renders/<site>/<page>.jpg    first-screen screenshot (labeler/render_pages.py)
-  GET  /api/render/<site>/<page>           that page's render entry (alignment score, offset), or null
-  GET  /api/renders                        ids of pages that have a screenshot
+  GET  /corpus/snapshots/<site>/<page>.html styled static copy (labeler/snapshot_pages.py), sandboxed: no scripts or network
+  GET  /api/snapshot/<site>/<page>         that copy's index entry (match score, height), or null
+  GET  /api/snapshots                      ids of pages that have a copy
   GET  /api/labels                         {page: status} for label files in runs/labels/
   GET  /api/labels/<site>/<page>           one saved label
   POST /api/labels                         autosave a label as in_progress or complete (complete is re-validated)
@@ -35,7 +35,10 @@ INSPECTOR_MODULES = {"model.mjs"}
 TYPES = {".html": "text/html; charset=utf-8", ".mjs": "text/javascript; charset=utf-8",
          ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".jpg": "image/jpeg"}
 PAGE_FILE = re.compile(r"/corpus/pages/([0-9a-f]{24})/([0-9a-f]{24})/(.+)")
-RENDER_FILE = re.compile(r"/corpus/renders/([0-9a-f]{24})/([0-9a-f]{24})\.jpg")
+SNAPSHOT_FILE = re.compile(r"/corpus/snapshots/([0-9a-f]{24})/([0-9a-f]{24})\.html")
+# A third-party page copy: shown only inside the labeler, with its inlined styles, images and fonts, never scripts or requests.
+SNAPSHOT_CSP = ("default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; "
+                "frame-ancestors 'self'; sandbox allow-same-origin")
 PAGE_ID = re.compile(r"[0-9a-f]{24}/[0-9a-f]{24}")
 MAX_POST = 32 << 20
 # A page with no label file is untouched; earlier labels used draft/submitted.
@@ -66,13 +69,13 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             return False
 
-    def _send(self, status, body, content_type="application/json; charset=utf-8"):
+    def _send(self, status, body, content_type="application/json; charset=utf-8", csp=None):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Cache-Control", "no-cache")
-        self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' "
+        self.send_header("Content-Security-Policy", csp or "default-src 'self'; script-src 'self'; style-src 'self' "
                          "'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; "
                          "base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
         self.end_headers()
@@ -96,9 +99,6 @@ class Handler(BaseHTTPRequestHandler):
             return ROOT / "inspector" / path.removeprefix("/inspector/")
         if path == "/corpus/queue.json":
             return self.corpus / "queue.json"
-        match = RENDER_FILE.fullmatch(path)
-        if match:
-            return self.corpus / "renders" / match[1] / f"{match[2]}.jpg"
         match = PAGE_FILE.fullmatch(path)
         if match and match[3] in CAPTURE_FILES:
             return self.corpus / "public-research-v1/captures" / match[1] / match[2] / STATE / match[3]
@@ -110,16 +110,23 @@ class Handler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         if path == "/api/labels":
             return self._json(200, self.label_status())
-        if path == "/api/renders":
-            index = self.corpus / "renders/index.json"
+        if path == "/api/snapshots":
+            index = self.corpus / "snapshots/index.json"  # re-read each time: copies may still be being made
             done = json.loads(index.read_text()) if index.exists() else {}
-            return self._json(200, sorted(page for page, entry in done.items() if not entry.get("error")))
-        if path.startswith("/api/render/"):
-            page = path.removeprefix("/api/render/")
+            return self._json(200, sorted(page for page, entry in done.items() if entry.get("status") == "ok"))
+        if path.startswith("/api/snapshot/"):
+            page = path.removeprefix("/api/snapshot/")
             if not PAGE_ID.fullmatch(page):
                 return self._json(400, {"error": "Unknown page id."})
-            index = self.corpus / "renders/index.json"  # re-read each time: the renderer may still be adding pages
-            return self._json(200, json.loads(index.read_text()).get(page) if index.exists() else None)
+            index = self.corpus / "snapshots/index.json"
+            entry = json.loads(index.read_text()).get(page) if index.exists() else None
+            return self._json(200, entry if entry and entry.get("status") == "ok" else None)
+        match = SNAPSHOT_FILE.fullmatch(path)
+        if match:
+            copy = self.corpus / "snapshots" / match[1] / f"{match[2]}.html"
+            if not copy.is_file():
+                return self._json(404, {"error": "Not found."})
+            return self._send(200, copy.read_bytes(), "text/html; charset=utf-8", csp=SNAPSHOT_CSP)
         if path.startswith("/api/labels/"):
             try:
                 label = self.label_path(path.removeprefix("/api/labels/"))

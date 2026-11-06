@@ -43,16 +43,16 @@ async function main() {
 
 // ---------------------------------------------------------------- picker
 
-// While screenshots are still being rendered, pages that have one come first (queue order kept within each set).
-// ponytail: temporary ordering; once every page is rendered this is the plain queue order again.
-const renderedPages = async () => new Set(await getJson('/api/renders').catch(() => []));
-const renderedFirst = (list, rendered) => [...list.filter(e => rendered.has(e.page)), ...list.filter(e => !rendered.has(e.page))];
+// While page copies are still being made, pages that have one come first (queue order kept within each set).
+// ponytail: temporary ordering; once every page is copied this is the plain queue order again.
+const copiedPages = async () => new Set(await getJson('/api/snapshots').catch(() => []));
+const copiedFirst = (list, copied) => [...list.filter(e => copied.has(e.page)), ...list.filter(e => !copied.has(e.page))];
 
 async function showPicker(queue) {
   const labels = await getJson('/api/labels').catch(() => ({}));
   const status = entry => labels[entry.page] || 'untouched';
-  const rendered = await renderedPages();
-  const ordered = Object.fromEntries(Object.entries(queue.groups).map(([name, list]) => [name, renderedFirst(list, rendered)]));
+  const copied = await copiedPages();
+  const ordered = Object.fromEntries(Object.entries(queue.groups).map(([name, list]) => [name, copiedFirst(list, copied)]));
   let group = queue.groups[params.get('group')] ? params.get('group') : 'main';
   let query = '';
   crumb.textContent = 'Queue';
@@ -293,14 +293,14 @@ function createTree({ title, pane, label = shortText, tagOf = n => `<${n.tag}>`,
 
 async function showPage(queue, page, groupName) {
   const group = queue.groups[groupName] ? groupName : 'main';
-  const entries = renderedFirst(queue.groups[group], await renderedPages());
+  const entries = copiedFirst(queue.groups[group], await copiedPages());
   const index = entries.findIndex(e => e.page === page);
   app.replaceChildren(h('p', { class: 'muted' }, 'Loading page…'));
-  let model, saved = null, render = null;
+  let model, saved = null, snap = null;
   try {
     model = await loadPage(page);
     saved = await getJson(`/api/labels/${page}`);
-    render = await getJson(`/api/render/${page}`).catch(() => null); // a first-screen screenshot, if rendered
+    snap = await getJson(`/api/snapshot/${page}`).catch(() => null); // a styled copy of the page, if saved
   } catch (error) {
     app.replaceChildren(h('p', { class: 'error' }, `Could not load ${page}: ${error.message}`), h('a', { href: `/?group=${group}` }, 'Back to queue'));
     return;
@@ -724,14 +724,6 @@ async function showPage(queue, page, groupName) {
     const size = pageSize(list, model.viewport || { width: 1365, height: 900 });
     const els = new Map();
     const page = h('div', { class: 'wire-page', style: `width:${size.width}px;height:${size.height}px` });
-    // A first-screen screenshot (labeler/render_pages.py) sits under the boxes, in the same page coordinates.
-    // It is moved up by the measured offset (how far the live page sits below the capture) so the two line up.
-    const fold = (model.viewport || { height: 900 }).height;
-    const shot = render && !render.error;
-    if (shot) {
-      page.append(h('img', { class: 'wire-shot', alt: '', src: `/corpus/renders/${model.page}.jpg`,
-        style: `top:${-(render.offset || 0)}px;width:${size.width}px;height:${fold}px` }));
-    }
     for (const b of [...list].sort((a, z) => z.rect.width * z.rect.height - a.rect.width * a.rect.height)) {
       const style = `left:${b.rect.x}px;top:${b.rect.y}px;width:${b.rect.width}px;height:${b.rect.height}px;`;
       const el = h('div', { class: 'box', style, 'data-id': b.id });
@@ -747,19 +739,57 @@ async function showPage(queue, page, groupName) {
       let text = line.text;
       while (text.includes(' ') && measure.measureText(text).width * 0.6 > line.width) text = text.slice(0, text.lastIndexOf(' '));
       const squeeze = Math.min(1.4, Math.max(0.6, line.width / (measure.measureText(text).width || 1)));
-      page.append(h('div', { class: `line${line.y < fold ? ' fold' : ''}`, style: `left:${line.x}px;top:${line.y}px;height:${line.height}px;line-height:${line.height}px;` +
+      page.append(h('div', { class: 'line', style: `left:${line.x}px;top:${line.y}px;height:${line.height}px;line-height:${line.height}px;` +
         `font-size:${line.fontSize}px;${line.bold ? 'font-weight:600;' : ''}transform:scaleX(${squeeze.toFixed(3)})` }, text));
     }
-    const canvas = h('div', { class: 'wire-canvas' }, page);
+    // A styled static copy of today's page (labeler/snapshot_pages.py) in a sandboxed frame, at full height.
+    // Its elements carry the capture's ids (data-sr-id) where they matched by content; selection is drawn
+    // inside it, and a click maps to the nearest matched compressed-DOM node.
+    const compactIds = new Set(model.compact.nodes.map(n => n.id));
+    const snapSize = { width: size.width, height: snap?.height || size.height };
+    let frameDoc = null, stamped = new Map(), marked = [], last = null;
+    const frame = snap ? h('iframe', { class: 'snap-frame', title: 'Page copy', tabindex: -1, sandbox: 'allow-same-origin',
+      src: `/corpus/snapshots/${model.page}.html`, style: `width:${snapSize.width}px;height:${snapSize.height}px` }) : null;
+    const snapPage = snap ? h('div', { class: 'snap-page' }, frame) : null;
+    frame?.addEventListener('load', () => {
+      frameDoc = frame.contentDocument;
+      frameDoc.head.append(Object.assign(frameDoc.createElement('style'), { textContent:
+        '[data-sr-sel]{outline:2px solid #2563eb!important;outline-offset:1px;background-color:rgba(37,99,235,.14)!important}' +
+        '[data-sr-scope]{outline:1px dashed #2563eb!important;outline-offset:1px}' +
+        'html.sr-click [data-sr-click]:not([data-sr-sel]){outline:1.5px dashed #ea580c!important;outline-offset:0}' }));
+      frameDoc.documentElement.classList.toggle('sr-click', showClickable);
+      stamped = new Map([...frameDoc.querySelectorAll('[data-sr-id]')].map(el => [el.dataset.srId, el]));
+      snapSize.height = Math.max(snapSize.height, frameDoc.documentElement.scrollHeight);
+      frame.style.height = `${snapSize.height}px`;
+      fit();
+      if (last) markFrame(...last);
+    });
+    function markFrame(highlighted, scopes) {
+      last = [highlighted, scopes];
+      if (!frameDoc) return;
+      for (const [el, name] of marked) el.removeAttribute(name);
+      marked = [];
+      for (const [ids, name] of [[highlighted, 'data-sr-sel'], [scopes, 'data-sr-scope']]) {
+        for (const id of ids) { const el = stamped.get(id); if (el) { el.setAttribute(name, ''); marked.push([el, name]); } }
+      }
+    }
+    // A node's box in page pixels for the current view (the copy has its own layout), or undefined.
+    function rectOf(id) {
+      if (mode !== 'page') return byBox.get(id);
+      const r = stamped.get(id)?.getBoundingClientRect();
+      return r && r.height ? { x: r.x, y: r.y, width: r.width, height: r.height } : undefined;
+    }
+    const canvas = h('div', { class: 'wire-canvas' }, page, ...(snapPage ? [snapPage] : []));
     const scroller = h('div', { class: 'wire' }, canvas);
     // Zoom is relative to fit-width (1 = the whole page width fits the pane).
     let scale = 1, zoom = 1;
     const byBox = new Map(list.map(b => [b.id, b.rect]));
     function fit() {
-      scale = Math.max(0.05, (scroller.clientWidth - 4) / size.width) * zoom;
-      page.style.transform = `scale(${scale})`;
-      canvas.style.width = `${size.width * scale}px`;
-      canvas.style.height = `${size.height * scale}px`;
+      const shown = mode === 'page' ? snapSize : size;
+      scale = Math.max(0.05, (scroller.clientWidth - 4) / shown.width) * zoom;
+      for (const el of [page, snapPage]) if (el) el.style.transform = `scale(${scale})`;
+      canvas.style.width = `${shown.width * scale}px`;
+      canvas.style.height = `${shown.height * scale}px`;
     }
     new ResizeObserver(fit).observe(scroller);
     const ZOOMS = [1, 1.5, 2, 3, 4, 6, 8];
@@ -775,24 +805,38 @@ async function showPage(queue, page, groupName) {
       scroller.scrollTop = py * scale - ay;
       zoomLabel.textContent = zoom === 1 ? 'Fit' : `${Math.round(zoom * 100)}%`;
     }
-    // Screenshot | Wireframe toggle with the alignment score; the choice is remembered per browser.
-    let mode = 'shot';
-    try { mode = localStorage.getItem('labeler.wireMode') || 'shot'; } catch { /* storage unavailable */ }
-    const modeButtons = ['shot', 'wire'].map(value => h('button', { type: 'button', class: 'segment', 'data-mode': value,
-      onclick: () => setMode(value) }, value === 'shot' ? 'Screenshot' : 'Wireframe'));
+    // Page | Wireframe toggle (when a copy exists) with the copy's match score; the choice is remembered per browser.
+    const modes = [...(snap ? ['page'] : []), 'wire'];
+    const NAMES = { page: 'Page', wire: 'Wireframe' };
+    let mode = modes[0];
+    try { mode = localStorage.getItem('labeler.wireMode') || mode; } catch { /* storage unavailable */ }
+    let showClickable = true;
+    try { showClickable = localStorage.getItem('labeler.clickable') !== 'off'; } catch { /* storage unavailable */ }
+    const modeButtons = modes.map(value => h('button', { type: 'button', class: 'segment', 'data-mode': value,
+      onclick: () => setMode(value) }, NAMES[value]));
+    const score = h('span', { class: 'view-score' });
+    const clickToggle = h('label', { class: 'check view-score', title: 'Outline links, buttons, controls and elements with click handlers' },
+      h('input', { type: 'checkbox', checked: showClickable, onchange: event => {
+        showClickable = event.target.checked;
+        frameDoc?.documentElement.classList.toggle('sr-click', showClickable);
+        try { localStorage.setItem('labeler.clickable', showClickable ? 'on' : 'off'); } catch { /* storage unavailable */ }
+      } }), 'Clickable');
     function setMode(value) {
-      mode = value;
-      scroller.classList.toggle('shot', shot && mode === 'shot');
+      mode = modes.includes(value) ? value : modes[0];
+      scroller.classList.toggle('page-mode', mode === 'page');
       modeButtons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
+      clickToggle.hidden = mode !== 'page';
+      if (mode === 'page') {
+        score.title = `${snap.matched} of ${snap.compact} compressed-DOM nodes found in today's page by tag and text` +
+          ` · copied ${(snap.snapped_at || '').slice(0, 10)}`;
+        score.textContent = `${Math.round(snap.score * 100)}% matched`;
+      } else score.textContent = '';
       try { localStorage.setItem('labeler.wireMode', mode); } catch { /* storage unavailable */ }
+      fit();
     }
     setMode(mode);
-    const score = shot ? h('span', { class: 'shot-score', title: render.anchors
-      ? `${render.aligned} of ${render.anchors} text anchors in the first screen line up with the capture` +
-        ` · offset ${render.offset || 0} px · rendered ${(render.rendered_at || '').slice(0, 10)}`
-      : 'No text in the first screen to compare with the capture' },
-    render.score == null ? 'not measured' : `${Math.round(render.score * 100)}% aligned`) : null;
-    const title = shot ? h('div', { class: 'shot-bar' }, h('div', { class: 'segmented' }, ...modeButtons), score) : h('span', {}, 'Wireframe');
+    const title = modes.length > 1 ? h('div', { class: 'view-bar' }, h('div', { class: 'segmented' }, ...modeButtons), score, clickToggle)
+      : h('span', {}, 'Wireframe');
     const zoomBar = h('div', { class: 'zoom-bar' },
       h('button', { type: 'button', class: 'icon-button', title: 'Zoom out', 'aria-label': 'Zoom out',
         onclick: () => setZoom([...ZOOMS].reverse().find(z => z < zoom) ?? 1) }, '−'),
@@ -829,21 +873,29 @@ async function showPage(queue, page, groupName) {
       scroller.classList.remove('panning');
       if (!was || was.moved) return;
       const p = point(event);
-      let id = hitTest(list, p.x, p.y);
+      let id = mode === 'page' ? frameHit(p) : hitTest(list, p.x, p.y);
+      if (mode === 'page' && !id) return say('That part of the page copy is not matched to the capture.', true);
       if (id && event.altKey) id = ctx.byId.get(id).parent || id;
       if (id) choose('compact', [id], { add: event.metaKey || event.ctrlKey || event.shiftKey }, 'wire');
     });
+    function frameHit(p) {
+      for (let el = frameDoc?.elementFromPoint(p.x, p.y); el; el = el.parentElement) {
+        if (compactIds.has(el.dataset?.srId)) return el.dataset.srId;
+      }
+      return null;
+    }
     scroller.title = 'Click to select (Alt: parent) · drag or scroll to pan · ⌘/Ctrl+scroll or pinch to zoom';
     return {
       view: scroller, zoomBar, title,
       // Put a node's box at the top of the wireframe; false when it has no box.
       alignTop(id) {
-        const r = byBox.get(id);
+        const r = rectOf(id);
         if (!r) return false;
         scroller.scrollTop = Math.max(0, r.y * scale - 8);
         return true;
       },
       update(placements, highlighted, scopes = []) {
+        markFrame(highlighted, scopes);
         const lit = new Set(highlighted), scoped = new Set(scopes);
         for (const [id, el] of els) {
           const state = placements.get(id);
@@ -851,8 +903,8 @@ async function showPage(queue, page, groupName) {
         }
       },
       scrollTo(id) {
-        const r = byBox.get(id);
-        if (!r) return;
+        const r = rectOf(id);
+        if (!r) { if (mode === 'page' && frameDoc) say('Not found in the page copy (not matched to today\'s page).'); return; }
         const top = r.y * scale, bottom = (r.y + r.height) * scale;
         if (top < scroller.scrollTop || bottom > scroller.scrollTop + scroller.clientHeight) scroller.scrollTop = Math.max(0, top - 40);
       },
