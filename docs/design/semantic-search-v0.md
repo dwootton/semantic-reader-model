@@ -34,6 +34,22 @@ well a small offline embedding model does, and how fast it is.
    copy (the same sandboxed iframe and `data-sr-sel` marking as the labeler). Pages without a copy (36) show
    only the list.
 
+## Exact tier: a superset of a screen reader's Find (2026-11-06)
+
+Screen readers (NVDA, JAWS) search the browse-mode text: visible text plus spoken names, as a case-insensitive
+substring. So results now come in two tiers:
+
+- **Exact, always shown, ignoring the cut-off.** `speakable()` walks `document.html` in order and builds one
+  string: text, `aria-labelledby` / `aria-label` (which replace a link's, button's or heading's contents), `alt`,
+  input values and placeholders; it skips `aria-hidden`, `hidden` and elements the capture saw as
+  `display:none` / `visibility:hidden`. `findExact()` matches the query there (case- and whitespace-insensitive,
+  no length cap) and pins each match to the smallest compressed-DOM node holding all of it, so a phrase running
+  across a link lands on its paragraph. It approximates the browser's accessible-name rules (no CSS generated
+  content).
+- **Meaning, below, above the cut-off**, without nodes already in Exact. Their embedded text now also uses
+  `aria-labelledby` and `<label for>`. The exact-word bonus counts only what a screen reader never speaks: id,
+  class, name and href words. Results inside hidden parts of the page say "not spoken".
+
 ## Model
 
 `BAAI/bge-small-en-v1.5` through `fastembed` (ONNX on CPU, no torch, about 130 MB downloaded once to the

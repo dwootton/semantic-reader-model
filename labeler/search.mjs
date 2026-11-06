@@ -1,12 +1,14 @@
-// Semantic search over one page (docs/design/semantic-search-v0.md). On open, every compressed-DOM node's
-// text is embedded by the server; the vectors live only in this page. Each query is embedded the same way and
-// scored against them here. Page text is inserted as text, never as HTML.
+// Semantic search over one page (docs/design/semantic-search-v0.md). Two tiers per query:
+//   exact    every occurrence in the page's speakable text (what a screen reader's Find searches), always shown
+//   meaning  compressed-DOM nodes whose embedded text is close to the query, above the cut-off
+// On open, every node's text is embedded by the server; the vectors live only in this page. Page text is
+// inserted as text, never as HTML.
 import { loadPage } from '/corpus.mjs';
-import { fold, nodeTexts, score } from '/search-text.mjs';
+import { findExact, fold, nodeTexts, openTag, score, speakable } from '/search-text.mjs';
 
 const app = document.getElementById('app');
 const params = new URLSearchParams(location.search);
-const TOP = 20;
+const TOP = 20, MAX_EXACT = 200, CONTEXT = 40;
 
 function h(tag, props = {}, ...children) {
   const el = document.createElement(tag);
@@ -51,6 +53,10 @@ async function main() {
   const model = await loadPage(page);
   const loadMs = performance.now() - started;
   const nodes = nodeTexts(model);
+  // The speakable text is read from the document itself: element ids are document-order indexes, as in loadPage.
+  const html = await (await fetch(`/corpus/pages/${page}/document.html`)).text();
+  const invisible = new Set(model.raw.nodes.filter(n => n.invisible).map(n => n.id));
+  const spoken = speakable(new DOMParser().parseFromString(html, 'text/html'), invisible);
   const snap = await getJson(`/api/snapshot/${page}`).catch(() => null);
   let pageVectors;
   try {
@@ -62,6 +68,9 @@ async function main() {
   const byId = new Map(model.compact.nodes.map(n => [n.id, n]));
   const parentOf = id => byId.get(id)?.parent;
   const nodeOf = new Map(nodes.map(n => [n.id, n]));
+  const rawById = new Map(model.raw.nodes.map(n => [n.id, n]));
+  const unspoken = id => { for (let n = rawById.get(id); n; n = rawById.get(n.parent)) if (spoken.hidden.has(n.id)) return true; return false; };
+  const tagOf = id => nodeOf.get(id)?.open || openTag(byId.get(id).tag, rawById.get(id)?.attributes);
 
   // ---- page copy (sandboxed, no scripts), as in the labeler
   let frameDoc = null, stamped = new Map(), marked = null;
@@ -100,12 +109,21 @@ async function main() {
   const list = h('div', { class: 'search-results' });
   let last = null, pending = 0;
 
+  const snippet = ({ start, end }) => h('span', { class: 'search-snippet' },
+    (start > CONTEXT ? '…' : '') + spoken.text.slice(Math.max(0, start - CONTEXT), start),
+    h('mark', {}, spoken.text.slice(start, end)),
+    spoken.text.slice(end, end + CONTEXT) + (end + CONTEXT < spoken.text.length ? '…' : ''));
+  const exactRow = (hit, meaning) => h('button', { class: 'search-row', onclick: () => show(hit.id) },
+    h('span', { class: 'search-score' }, `exact ×${hit.count}`,
+      h('span', { class: 'muted' }, meaning ? ` · meaning ${meaning.score.toFixed(3)}` : '')),
+    h('span', { class: 'tag' }, tagOf(hit.id)),
+    ...hit.matches.slice(0, 3).map(snippet), hit.matches.length > 3 ? h('span', { class: 'muted' }, `+${hit.matches.length - 3} more`) : null);
   const row = (r, depth) => [
     h('button', { class: 'search-row', style: `padding-left:${8 + depth * 16}px`, onclick: () => show(r.id) },
       h('span', { class: 'search-score' }, r.score.toFixed(3),
         h('span', { class: 'muted' }, ` = ${r.cosine.toFixed(3)} meaning` + (r.bonus ? ` + ${r.bonus.toFixed(3)} exact: ` +
           r.hits.map(hit => `"${hit.word}" in ${hit.fields.join(', ')}`).join('; ') : ''))),
-      h('span', { class: 'tag' }, nodeOf.get(r.id).open),
+      h('span', { class: 'tag' }, nodeOf.get(r.id).open, unspoken(r.id) ? h('span', { class: 'search-flag' }, ' not spoken') : null),
       h('span', { class: 'search-text' }, nodeOf.get(r.id).text)),
     ...r.nested.flatMap(n => row(n, depth + 1)),
   ];
@@ -115,13 +133,25 @@ async function main() {
     const t = performance.now();
     const scored = nodes.map((n, i) => ({ id: n.id, ...score(last.query, last.vector, n, pageVectors.vectors[i]) }));
     const scoreMs = performance.now() - t;
-    const above = scored.filter(r => r.score >= min);
+    const t2 = performance.now();
+    const exact = findExact(last.query, spoken, model);
+    const exactMs = performance.now() - t2;
+    const exactIds = new Set(exact.map(hit => hit.id));
+    const scoreOf = new Map(scored.map(r => [r.id, r]));
+    const above = scored.filter(r => r.score >= min && !exactIds.has(r.id));
     const top = fold(above, parentOf).slice(0, TOP);
     const best = Math.max(...scored.map(r => r.score));
-    timing.textContent = `query embed ${ms(last.ms)} (server ${ms(last.serverMs)}) · score ${ms(scoreMs)} · ` +
-      `${above.length} above ${min} · best ${best.toFixed(3)}`;
-    list.replaceChildren(...(top.length ? top.flatMap(r => row(r, 0))
-      : [h('p', { class: 'muted search-pad' }, `Nothing at or above ${min}. Lower the cut-off to see weaker matches.`)]));
+    const occurrences = exact.reduce((sum, hit) => sum + hit.count, 0);
+    timing.textContent = `query embed ${ms(last.ms)} (server ${ms(last.serverMs)}) · score ${ms(scoreMs)} · exact ${ms(exactMs)} · ` +
+      `${above.length} more above ${min} · best ${best.toFixed(3)}`;
+    list.replaceChildren(...[
+      h('div', { class: 'search-tier' }, exact.length ? `Exact · ${occurrences} in ${exact.length} nodes` : 'Exact · none in the spoken text'),
+      ...exact.slice(0, MAX_EXACT).map(hit => exactRow(hit, scoreOf.get(hit.id))),
+      exact.length > MAX_EXACT ? h('p', { class: 'muted search-pad' }, `${exact.length - MAX_EXACT} more nodes not shown.`) : null,
+      h('div', { class: 'search-tier' }, `Meaning · ${min} and up`),
+      ...(top.length ? top.flatMap(r => row(r, 0))
+        : [h('p', { class: 'muted search-pad' }, `Nothing else at or above ${min}. Lower the cut-off to see weaker matches.`)]),
+    ].filter(Boolean));
   };
   const search = async () => {
     const query = input.value.trim();
@@ -144,7 +174,7 @@ async function main() {
       h('section', { class: 'window' },
         h('div', { class: 'menubar' }, input, h('label', { class: 'check' }, 'cut-off ', cutoff)),
         h('div', { class: 'status-line search-timing' },
-          `${nodes.length} nodes · page load ${ms(loadMs)} · embed ${ms(pageVectors.ms)} (server ${ms(pageVectors.serverMs)}) · ${pageVectors.model}`),
+          `${nodes.length} nodes · ${spoken.text.length.toLocaleString()} spoken characters · page load ${ms(loadMs)} · embed ${ms(pageVectors.ms)} (server ${ms(pageVectors.serverMs)}) · ${pageVectors.model}`),
         timing, note, list),
       h('section', { class: 'window' }, copy)));
   zoom();

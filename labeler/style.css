@@ -191,3 +191,7 @@ main:has(.workspace) { padding: 10px 14px; }
 .search-copy { overflow: auto; flex: 1; min-height: 0; background: #fff; }
 .search-pad { padding: 8px 12px; }
 @media (max-width: 900px) { .search-workspace { grid-template-columns: 1fr; height: auto; } .search-results, .search-copy { max-height: 60vh; } }
+.search-tier { position: sticky; top: 0; z-index: 1; padding: 4px 8px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); background: var(--panel); border-bottom: 1px solid var(--line); }
+.search-snippet { color: var(--text); }
+.search-snippet mark { background: var(--related); color: inherit; }
+.search-flag { color: var(--warn); }

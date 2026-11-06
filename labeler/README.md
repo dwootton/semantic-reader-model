@@ -39,7 +39,7 @@ uv run --with playwright==1.62.0 python labeler/snapshot_pages.py --group main -
 
 ## Semantic search (experiment)
 
-`/search?page=<site>/<page>` finds elements on one page by meaning ("login" → Sign in, account links). On open, each compressed-DOM node becomes a short text (its text, labels, link path, id and class words, kind and landmark) and is embedded with `BAAI/bge-small-en-v1.5`; vectors stay in the page only. Score = cosine + up to 0.1 for query words found literally; results above the cut-off nest under matching ancestors, and clicking one highlights it in the page copy. Needs the server started with fastembed:
+`/search?page=<site>/<page>` finds elements on one page by meaning ("login" → Sign in, account links). On open, each compressed-DOM node becomes a short text (its text, labels, link path, id and class words, kind and landmark) and is embedded with `BAAI/bge-small-en-v1.5`; vectors stay in the page only. Results come in two tiers: **Exact**, every occurrence of the query in the page's speakable text (what a screen reader's Find searches: text, accessible names, alt text; not hidden parts), always shown; then **Meaning**, nodes scoring cosine + up to 0.1 for query words in their id, class, name or href above the cut-off, nested under matching ancestors. Clicking a result highlights it in the page copy. Needs the server started with fastembed:
 
 ```sh
 uv run --with fastembed python labeler/server.py
