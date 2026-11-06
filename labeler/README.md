@@ -37,6 +37,16 @@ uv run --with playwright==1.62.0 python labeler/snapshot_pages.py --group main -
 
 **Page** appears first in the toggle when a copy exists. Clicking selects the nearest matched compressed-DOM node; selections are drawn in the copy; **Clickable** outlines interactive elements. The score is the share of compressed-DOM nodes found in today's page by content (positions differ from the capture by design: it was measured with Arial and no media). Unmatched nodes cannot be clicked in the copy; use Wireframe for them. Copies hold third-party assets: they stay in `runs/corpus/snapshots/` (private, gitignored) and are served with a sandbox policy that allows no scripts and no network.
 
+## Semantic search (experiment)
+
+`/search?page=<site>/<page>` finds elements on one page by meaning ("login" → Sign in, account links). On open, each compressed-DOM node becomes a short text (its text, labels, link path, id and class words, kind and landmark) and is embedded with `BAAI/bge-small-en-v1.5`; vectors stay in the page only. Score = cosine + up to 0.1 for query words found literally; results above the cut-off nest under matching ancestors, and clicking one highlights it in the page copy. Needs the server started with fastembed:
+
+```sh
+uv run --with fastembed python labeler/server.py
+```
+
+Plan and limits: [docs/design/semantic-search-v0.md](../docs/design/semantic-search-v0.md).
+
 ## Output
 
 - `runs/labels/<site>__<page>.json`: the semantic tree in the inspector's variant shape (`rootId`, groups and units whose `sourceRefs` are raw DOM IDs) plus `provenance` (status, labeler, timestamps, skips, notes, capture URL and document hash).

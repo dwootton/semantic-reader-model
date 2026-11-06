@@ -2,6 +2,7 @@
 
 Routes:
   GET  /                                   the labeler page; other labeler/*.html|*.mjs|*.css by name
+  GET  /search                             semantic search over one page (docs/design/semantic-search-v0.md)
   GET  /inspector/model.mjs                shared tree helpers reused from the inspector
   GET  /corpus/queue.json                  page order (labeler/queue_order.py)
   GET  /corpus/pages/<site>/<page>/<file>  one of the six desktop capture files
@@ -12,9 +13,11 @@ Routes:
   GET  /api/labels/<site>/<page>           one saved label
   POST /api/labels                         autosave a label as in_progress or complete (complete is re-validated)
   POST /api/export                         write an inspector dataset to runs/labels/datasets/
+  POST /api/embed                          {texts, query?} -> unit vectors (needs fastembed; see search_model)
   POST /api/corpus-check                   writes runs/corpus/excluded.json from the in-browser check
 """
 import argparse
+import base64
 from datetime import datetime, timezone
 import getpass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -22,6 +25,8 @@ import json
 from pathlib import Path
 import re
 import sys
+import threading
+import time
 from urllib.parse import urlsplit
 
 APP = Path(__file__).resolve().parent
@@ -41,6 +46,19 @@ SNAPSHOT_CSP = ("default-src 'none'; style-src 'unsafe-inline'; img-src data:; f
                 "frame-ancestors 'self'; sandbox allow-same-origin")
 PAGE_ID = re.compile(r"[0-9a-f]{24}/[0-9a-f]{24}")
 MAX_POST = 32 << 20
+EMBED_MODEL = "BAAI/bge-small-en-v1.5"
+MAX_TEXTS, MAX_TEXT = 20000, 1000
+_model, _model_lock = None, threading.Lock()
+
+
+def search_model():
+    """The embedding model, loaded on first use; the labeler itself runs without fastembed installed."""
+    global _model
+    with _model_lock:
+        if _model is None:
+            from fastembed import TextEmbedding
+            _model = TextEmbedding(EMBED_MODEL)
+        return _model
 # A page with no label file is untouched; earlier labels used draft/submitted.
 STATUSES = {"in_progress", "complete"}
 LEGACY = {"draft": "in_progress", "submitted": "complete"}  # an exported dataset carries the page's whole raw DOM
@@ -93,6 +111,8 @@ class Handler(BaseHTTPRequestHandler):
         """Map an allowed URL path to a file on disk, or None."""
         if path == "/":
             return APP / "index.html"
+        if path == "/search":
+            return APP / "search.html"
         if re.fullmatch(r"/[\w-]+\.(html|mjs|css)", path):
             return APP / path[1:]
         if path.startswith("/inspector/") and path.removeprefix("/inspector/") in INSPECTOR_MODULES:
@@ -142,7 +162,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self._allowed(mutation=True):
             return self._json(403, {"error": "Same-origin loopback access is required."})
-        routes = {"/api/corpus-check": self.save_check, "/api/labels": self.save_label, "/api/export": self.save_export}
+        routes = {"/api/embed": self.embed, "/api/corpus-check": self.save_check, "/api/labels": self.save_label, "/api/export": self.save_export}
         handler = routes.get(urlsplit(self.path).path)
         if handler is None:
             return self._json(404, {"error": "Unknown endpoint."})
@@ -159,6 +179,22 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, KeyError, TypeError, AssertionError) as error:
             return self._json(400, {"error": str(error)[:500]})
         self._json(status, payload)
+
+    def embed(self, body):
+        """Unit vectors as base64 float32, one per text; queries get the model's search-query prefix. Nothing is kept."""
+        texts = body["texts"]
+        if not isinstance(texts, list) or not 0 < len(texts) <= MAX_TEXTS or not all(isinstance(t, str) for t in texts):
+            raise ValueError(f"texts must be 1–{MAX_TEXTS} strings.")
+        try:
+            model = search_model()
+        except ImportError:
+            return 501, {"error": "Start the server with: uv run --with fastembed python labeler/server.py"}
+        started = time.perf_counter()
+        texts = [t[:MAX_TEXT] for t in texts]
+        vectors = list(model.query_embed(texts) if body.get("query") else model.embed(texts))
+        ms = round((time.perf_counter() - started) * 1000, 1)
+        return 200, {"model": EMBED_MODEL, "ms": ms, "dim": len(vectors[0]),
+                     "vectors": base64.b64encode(b"".join(v.astype("<f4").tobytes() for v in vectors)).decode()}
 
     def save_check(self, report):
         pages = report["pages"]

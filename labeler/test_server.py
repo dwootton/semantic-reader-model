@@ -54,6 +54,12 @@ class ServerTest(unittest.TestCase):
         self.assertEqual((status, body), (200, b"<script>alert(1)</script>"))
         self.assertTrue(kind.startswith("text/plain"))
 
+    def test_search_page_and_embed_input_checks(self):
+        self.assertEqual(self.request("GET", "/search")[0], 200)
+        headers = {"Content-Type": "application/json"}
+        for body in [{"texts": []}, {"texts": "login"}, {"texts": [1]}]:
+            self.assertEqual(self.request("POST", "/api/embed", json.dumps(body), headers)[0], 400)
+
     def test_refuses_everything_else(self):
         for path in [f"/corpus/pages/{SITE}/{PAGE}/ax.json", f"/corpus/pages/{SITE}/{PAGE}/../../x",
                      "/corpus/pages/zz/yy/document.html", "/server.py", "/inspector/app.mjs",
